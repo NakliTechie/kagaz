@@ -1,0 +1,1782 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kagaz</title>
+<style>
+  :root {
+    --chrome-bg: #fafaf8;
+    --chrome-fg: #1c1815;
+    --chrome-muted: #6b6b68;
+    --chrome-line: #e5e5e2;
+    --chrome-panel: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--chrome-bg); color: var(--chrome-fg);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Phase 1 smoke-test shell — real editor UI lands in Phase 2 */
+  .app { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .brand { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin: 0; }
+  .brand-sub { font-size: 11px; color: var(--chrome-muted); letter-spacing: 1.5px; text-transform: uppercase; margin: 4px 0 24px; }
+  .phase-notice { font-size: 12px; color: var(--chrome-muted); font-style: italic; margin-bottom: 20px; padding: 10px 14px; background: #fffbee; border: 1px solid #f0e8c0; border-radius: 4px; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .btn { background: var(--chrome-fg); color: #fff; border: none; padding: 8px 14px; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer; }
+  .btn.secondary { background: transparent; color: var(--chrome-fg); border: 1px solid var(--chrome-line); }
+  .btn:hover { opacity: 0.85; }
+  #preview { border: 1px solid var(--chrome-line); border-radius: 6px; overflow: hidden; background: #fff; }
+  #status { font-size: 11px; color: var(--chrome-muted); margin-top: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1 class="brand">Kagaz</h1>
+  <p class="brand-sub">काग़ज़ · paper</p>
+  <div class="phase-notice">Phase 1 engine — smoke-test harness. Full editor UI lands in Phase 2.</div>
+  <div class="toolbar">
+    <button class="btn" id="loadDemo">Load demo project</button>
+    <button class="btn secondary" id="openFile">Open .kagaz</button>
+    <button class="btn secondary" id="saveFile">Save .kagaz</button>
+    <button class="btn secondary" id="exportSite">Export site</button>
+  </div>
+  <div id="preview"></div>
+  <div id="status"></div>
+</div>
+
+<script>
+"use strict";
+
+// ============================================================================
+// KAGAZ ENGINE — single-file inline
+// ============================================================================
+// Layout sections:
+//   1. PALETTES          (240 palettes × 22 families, 7 slots each)
+//   2. FAMILY_LABELS     (family id → display label)
+//   3. TYPOGRAPHIES      (8 pairings, web-safe fonts only)
+//   4. LAYOUT_STORIES    (15 HTML stories, one per layout)
+//   5. COMBINATIONS      (57 curated starting points)
+//   6. SLOT_DEFS         (locked slot vocabulary, per spec)
+//   7. ICONS             (14 baked-in inline SVGs + detectIcon helper)
+//   8. LAYOUTS           (15 layouts × per-page render functions)
+//   9. FILE_FORMAT       (.kagaz zip load/save + static site export)
+//  10. SMOKE_TEST        (demo project + wiring for Phase 1 buttons)
+// ============================================================================
+
+// -----------------------------------------------------------------------------
+// 1. PALETTES
+// -----------------------------------------------------------------------------
+// Snapshot from specs/workshop-reference.html. 7-slot contract per palette:
+//   BODY   — page background
+//   PANEL  — raised surface (cards, modals)
+//   INK    — primary text
+//   BRAND  — accent, logo, hero callout
+//   ACT    — action / link color
+//   OK     — success / affirmative
+//   ROW    — subtle dividers, table rows
+const PALETTES = [
+  // JAPAN 日本
+  { id:"jp-01-muji", family:"japan", name:"01 · 無印 MUJI [LIGHT role]", feel:"Muji store, Kinokuniya. Cleanest white role.", slots:{BODY:"#f9f9f8",PANEL:"#ffffff",INK:"#1c1815",BRAND:"#8b3a1f",ACT:"#1a2b4a",OK:"#4a6b2a",ROW:"#f1f1ee"} },
+  { id:"jp-02-kinari", family:"japan", name:"02 · 生成り KINARI [WARM role]", feel:"Edo merchant ledger, washi paper. Warm cream anchor role.", slots:{BODY:"#f3ecdc",PANEL:"#faf4e6",INK:"#3a2a1a",BRAND:"#9b4a22",ACT:"#2a3a5a",OK:"#5a6b2a",ROW:"#ebe2cf"} },
+  { id:"jp-03-sumi", family:"japan", name:"03 · 墨 SUMI [MONO role]", feel:"Zen monochrome, calligraphy ink. Mono role.", slots:{BODY:"#f5f5f4",PANEL:"#ffffff",INK:"#0d0d0c",BRAND:"#5a5a58",ACT:"#2c2c2a",OK:"#3d4a30",ROW:"#ebebe9"} },
+  { id:"jp-04-sakura", family:"japan", name:"04 · 桜 SAKURA", feel:"Hanami picnic, cherry blossom on the breeze.", slots:{BODY:"#fdf6f4",PANEL:"#ffffff",INK:"#1c1815",BRAND:"#8b3a1f",ACT:"#1a2b4a",OK:"#4a6b2a",ROW:"#f7eeec"} },
+  { id:"jp-05-matcha", family:"japan", name:"05 · 抹茶 MATCHA", feel:"Whisked tea ceremony matcha, Uji stone-ground.", slots:{BODY:"#cce0a8",PANEL:"#dceabc",INK:"#0e2008",BRAND:"#8b3a1f",ACT:"#1a2b4a",OK:"#4a6b2a",ROW:"#b8cc8c"} },
+  { id:"jp-06-kon", family:"japan", name:"06 · 紺 KON", feel:"Noren curtain, Edo workwear, sashiko stitching.", slots:{BODY:"#e3e8f2",PANEL:"#f4f6fb",INK:"#0a1430",BRAND:"#a83018",ACT:"#1a3a78",OK:"#3a5a2a",ROW:"#d5dceb"} },
+  { id:"jp-07-kuchiba", family:"japan", name:"07 · 朽葉 KUCHIBA", feel:"Fallen ginkgo on temple stone, late November.", slots:{BODY:"#f4e8d4",PANEL:"#fcf3e2",INK:"#3a1f0c",BRAND:"#b84818",ACT:"#2a3a5a",OK:"#5a5a1a",ROW:"#ebdcc1"} },
+  { id:"jp-08-tatami", family:"japan", name:"08 · 畳 TATAMI", feel:"Fresh igusa rush mat, the floor of every traditional room.", slots:{BODY:"#ecdcb0",PANEL:"#f6e8c4",INK:"#3a2812",BRAND:"#8b3a1f",ACT:"#1a2b4a",OK:"#4a6b2a",ROW:"#e0cc94"} },
+  { id:"jp-09-beni", family:"japan", name:"09 · 紅 BENI", feel:"Safflower lip pigment, Yamagata distillation, geisha makeup.", slots:{BODY:"#f4c4c0",PANEL:"#fcd4d0",INK:"#2a0814",BRAND:"#c81848",ACT:"#1a2b4a",OK:"#4a6b2a",ROW:"#e8a8a4"} },
+  { id:"jp-10-urushi", family:"japan", name:"10 · 漆 URUSHI [DARK role]", feel:"Wajima lacquerware, kintsugi gold repair. Dark mode role.", slots:{BODY:"#15100c",PANEL:"#1e1813",INK:"#f5e6c8",BRAND:"#c8512a",ACT:"#3a5a8a",OK:"#7a9a3a",ROW:"#221a13"} },
+  // CHINA 中国
+  { id:"cn-01-baizi", family:"china", name:"01 · 白瓷 BAIZI [LIGHT role]", feel:"Dehua Blanc de Chine, museum porcelain. Light role.", slots:{BODY:"#f8f7f4",PANEL:"#ffffff",INK:"#1a1a1a",BRAND:"#c8302a",ACT:"#1a3a78",OK:"#4a6b2a",ROW:"#efeeea"} },
+  { id:"cn-02-mizhi", family:"china", name:"02 · 米紙 MIZHI [WARM role]", feel:"Hand-scroll mulberry paper, calligraphy. Warm cream anchor.", slots:{BODY:"#f5ecd6",PANEL:"#fcf6e4",INK:"#2a1a0a",BRAND:"#b8281a",ACT:"#1f3360",OK:"#5a6a1f",ROW:"#ecdfc2"} },
+  { id:"cn-03-shuimo", family:"china", name:"03 · 水墨 SHUIMO [MONO role]", feel:"Bada Shanren ink wash, literati monochrome. Mono role.", slots:{BODY:"#f4f4f3",PANEL:"#ffffff",INK:"#0c0c0c",BRAND:"#4a4a48",ACT:"#2a2a28",OK:"#3a4a30",ROW:"#e8e8e6"} },
+  { id:"cn-04-taohua", family:"china", name:"04 · 桃花 TAOHUA", feel:"Peach orchard at first light. China's idyllic-pastoral pink.", slots:{BODY:"#fdf4f0",PANEL:"#ffffff",INK:"#1a1a1a",BRAND:"#c8302a",ACT:"#1a3a78",OK:"#4a6b2a",ROW:"#f6e8e2"} },
+  { id:"cn-05-huang", family:"china", name:"05 · 黄 HUANG", feel:"Forbidden City roof tile. Reserved by edict for the Son of Heaven.", slots:{BODY:"#f8d860",PANEL:"#fce470",INK:"#2a1808",BRAND:"#c8302a",ACT:"#1a3a78",OK:"#4a6b2a",ROW:"#ecc848"} },
+  { id:"cn-06-qingci", family:"china", name:"06 · 青瓷 QINGCI", feel:"Song Longquan celadon, sky-after-rain. Pale grey-green.", slots:{BODY:"#ecf2ea",PANEL:"#ffffff",INK:"#1a2a1a",BRAND:"#c8302a",ACT:"#1a3a78",OK:"#4a6b2a",ROW:"#e0e8dd"} },
+  { id:"cn-07-qinghua", family:"china", name:"07 · 青花 QINGHUA", feel:"Yuan/Ming blue-and-white porcelain. Most consequential color in trade history.", slots:{BODY:"#e2e9f4",PANEL:"#f5f8fc",INK:"#0a1a40",BRAND:"#c8302a",ACT:"#1a4090",OK:"#3a5a2a",ROW:"#d2dcec"} },
+  { id:"cn-08-zhusha", family:"china", name:"08 · 朱砂 ZHUSHA", feel:"Mercury-sulfide pigment, seal-paste in every formal document. Ritual.", slots:{BODY:"#f6e6d4",PANEL:"#fdf2e2",INK:"#3a1208",BRAND:"#c8281a",ACT:"#2a3a5a",OK:"#5a5a1a",ROW:"#ebd6bc"} },
+  { id:"cn-09-hong", family:"china", name:"09 · 红 HONG", feel:"Spring Festival lantern, hongbao, wedding gown. Where Zhusha is ritual, Hong is celebration.", slots:{BODY:"#d8181a",PANEL:"#e82828",INK:"#f8e8a8",BRAND:"#f8e8a8",ACT:"#0a0a0a",OK:"#f8e8a8",ROW:"#b81010"} },
+  { id:"cn-10-qiqi", family:"china", name:"10 · 漆器 QIQI [DARK role]", feel:"Han lacquerware, red-and-gold-on-black 3000 years old. Dark mode role.", slots:{BODY:"#1a0a08",PANEL:"#240e0a",INK:"#f0d690",BRAND:"#d8382a",ACT:"#3a5aa0",OK:"#7a9a3a",ROW:"#2a120e"} },
+  // INDIA · NORTH
+  { id:"in1-01-chuna", family:"india-north", name:"01 · चूना CHUNA [LIGHT role]", feel:"Whitewashed haveli wall, jaali shadow at noon. Light role.", slots:{BODY:"#f9f8f4",PANEL:"#ffffff",INK:"#1a1a18",BRAND:"#c8341a",ACT:"#1a3a78",OK:"#4a6b2a",ROW:"#efeeea"} },
+  { id:"in1-02-khadi", family:"india-north", name:"02 · खादी KHADI [WARM role]", feel:"Sabarmati spinning wheel, swadeshi cotton. Warm cream anchor role.", slots:{BODY:"#f0e8d2",PANEL:"#f8f1de",INK:"#2a1a08",BRAND:"#b03018",ACT:"#1f3360",OK:"#5a6a1f",ROW:"#e6dbc0"} },
+  { id:"in1-03-kajal", family:"india-north", name:"03 · काजल KAJAL [MONO role]", feel:"Lamp soot kohl, applied to babies against the evil eye. Mono role.", slots:{BODY:"#f4f4f2",PANEL:"#ffffff",INK:"#0a0a08",BRAND:"#4a4a48",ACT:"#2a2a28",OK:"#3a4a30",ROW:"#e8e8e6"} },
+  { id:"in1-04-gulabi", family:"india-north", name:"04 · गुलाबी GULABI", feel:"Hawa Mahal at sunset. Born from a dated municipal decree.", slots:{BODY:"#fbeee4",PANEL:"#fff8f2",INK:"#1a1a18",BRAND:"#c8341a",ACT:"#1a3a78",OK:"#4a6b2a",ROW:"#f4e2d2"} },
+  { id:"in1-05-haldi", family:"india-north", name:"05 · हल्दी HALDI", feel:"Wedding pithi ceremony. Both medicine and food and ceremony at once.", slots:{BODY:"#fbecc4",PANEL:"#fdf4d8",INK:"#2a1a08",BRAND:"#c8341a",ACT:"#1a3a78",OK:"#5a6a1a",ROW:"#f0dca8"} },
+  { id:"in1-06-neel", family:"india-north", name:"06 · नील NEEL", feel:"Bagru block-print, Champaran indigo. The dye that started Indian mass political organizing.", slots:{BODY:"#dfe6f0",PANEL:"#f2f6fb",INK:"#0a1838",BRAND:"#c8341a",ACT:"#1a3a90",OK:"#3a5a2a",ROW:"#cfd8e8"} },
+  { id:"in1-07-kumkum", family:"india-north", name:"07 · कुमकुम KUMKUM", feel:"Bindi, sindoor, tilak. Marital status, blessing, protection.", slots:{BODY:"#f8e0c8",PANEL:"#fdedd8",INK:"#3a1208",BRAND:"#c8281a",ACT:"#2a3a5a",OK:"#5a5a1a",ROW:"#ecd0b0"} },
+  { id:"in1-08-aakash", family:"india-north", name:"08 · आकाश AAKASH", feel:"Pichwai painting sky, the blue behind a Krishna figure just before monsoon.", slots:{BODY:"#e8eef2",PANEL:"#f6fafc",INK:"#0f2030",BRAND:"#c8341a",ACT:"#1a4870",OK:"#3a5e35",ROW:"#d8e0e6"} },
+  { id:"in1-09-mor", family:"india-north", name:"09 · मोर MOR", feel:"Krishna's mor-mukut, peacock-feather crown. National bird.", slots:{BODY:"#1f7a8a",PANEL:"#2a8a98",INK:"#f4dc88",BRAND:"#f4dc88",ACT:"#08283a",OK:"#5a7a2a",ROW:"#0f5a6a"} },
+  { id:"in1-10-sheesham", family:"india-north", name:"10 · शीशम SHEESHAM [DARK role]", feel:"Grandmother's almirah, brass keys, generations of patina. Dark mode role.", slots:{BODY:"#1a0e08",PANEL:"#261408",INK:"#f0d090",BRAND:"#d8482a",ACT:"#4a6aa0",OK:"#8a9a3a",ROW:"#2a1a0a"} },
+  // INDIA · WEST
+  { id:"inw-01-deco", family:"india-west", name:"01 · MUMBAI ART DECO [LIGHT role]", feel:"Marine Drive at dusk · Parsi merchants' Miami · UNESCO 2018", slots:{BODY:"#f5ede0",PANEL:"#fcf5e8",INK:"#1a1818",BRAND:"#c8341a",ACT:"#1a4090",OK:"#2a5a2a",ROW:"#ece4d4"} },
+  { id:"inw-02-pol", family:"india-west", name:"02 · પોળ POL [WARM role]", feel:"Ahmedabad UNESCO 2017 · India's first UNESCO city · 600 years of shared courtyards", slots:{BODY:"#e8d4a4",PANEL:"#f0e0b8",INK:"#2a1808",BRAND:"#a83018",ACT:"#1f3a8a",OK:"#5a6a2a",ROW:"#dcc890"} },
+  { id:"inw-03-gothic", family:"india-west", name:"03 · BOMBAY GOTHIC [MONO role]", feel:"Indo-Saracenic CST · basalt + sandstone · 10 years to build", slots:{BODY:"#efece4",PANEL:"#f8f6ee",INK:"#0a0a0a",BRAND:"#4a4a48",ACT:"#28282c",OK:"#38442e",ROW:"#e2dfd6"} },
+  { id:"inw-04-palitana", family:"india-west", name:"04 · પાલિતાણા PALITANA", feel:"Shatrunjaya hill · 863 marble Jain temples · 3,950 steps barefoot", slots:{BODY:"#eef2ee",PANEL:"#f6faf6",INK:"#1a2a1a",BRAND:"#c8341a",ACT:"#1a4090",OK:"#2a5a2a",ROW:"#dee2dc"} },
+  { id:"inw-05-lavani", family:"india-west", name:"05 · लावणी LAVANI", feel:"Marathwada women's performance · 9-yard nauvari · sung by women, in front of women", slots:{BODY:"#781848",PANEL:"#882858",INK:"#f0c820",BRAND:"#f0c820",ACT:"#f4ecd8",OK:"#f0c820",ROW:"#581030"} },
+  { id:"inw-06-bhunga", family:"india-west", name:"06 · ભુંગા KUTCH BHUNGA", feel:"Rabari nomads · round mud huts · 2001 Bhuj earthquake survivors", slots:{BODY:"#1a2848",PANEL:"#2a3858",INK:"#f4ecd8",BRAND:"#c8341a",ACT:"#f0c820",OK:"#2a8a4a",ROW:"#0a1838"} },
+  { id:"inw-07-chaturthi", family:"india-west", name:"07 · गणेश चतुर्थी GANESH CHATURTHI", feel:"Tilak 1893 · religious cover for political organizing · Lalbaugcha Raja", slots:{BODY:"#e8542a",PANEL:"#f8643a",INK:"#f4ecd8",BRAND:"#f4ecd8",ACT:"#f0c820",OK:"#2a5a2a",ROW:"#c8401a"} },
+  { id:"inw-08-goa", family:"india-west", name:"08 · AZULEJO (GOA)", feel:"Portuguese cobalt-on-white · 450 years · narrative tile", slots:{BODY:"#e0e8f4",PANEL:"#f0f4fa",INK:"#0a1a48",BRAND:"#c8341a",ACT:"#1a4090",OK:"#2a5a2a",ROW:"#cad6e8"} },
+  { id:"inw-09-fontainhas", family:"india-west", name:"09 · FONTAINHAS", feel:"Panaji Latin Quarter · house colors mandated by municipal ordinance", slots:{BODY:"#f0c860",PANEL:"#f8d470",INK:"#2a1a08",BRAND:"#d83838",ACT:"#1a8aa8",OK:"#2a8a4a",ROW:"#dcb448"} },
+  { id:"inw-10-night", family:"india-west", name:"10 · सह्याद्री रात्री SAHYADRI NIGHT [DARK role]", feel:"Shivaji's forts at night · 350 fortresses · Maratha standard in torch-light", slots:{BODY:"#08101a",PANEL:"#141c28",INK:"#f0c870",BRAND:"#e8542a",ACT:"#4a6a8a",OK:"#6a9a3a",ROW:"#1a222e"} },
+  // KASHMIR
+  { id:"ksh-01-pashmina", family:"kashmir", name:"01 · पश्मीना PASHMINA [LIGHT role]", feel:"Undyed Changthang cashmere · 100g per goat per year · -40°C survival fleece", slots:{BODY:"#f4f0e8",PANEL:"#fcf8f0",INK:"#1a1818",BRAND:"#c84818",ACT:"#1a3a90",OK:"#2a5a2a",ROW:"#ece8e0"} },
+  { id:"ksh-02-kahwa", family:"kashmir", name:"02 · کہوہ KAHWA [WARM role]", feel:"Saffron + cardamom + almond green tea · samavar in copper cups", slots:{BODY:"#ecd498",PANEL:"#f4dca8",INK:"#2a1808",BRAND:"#a83018",ACT:"#1f3a8a",OK:"#5a6a2a",ROW:"#e0c884"} },
+  { id:"ksh-03-slate", family:"kashmir", name:"03 · SLATE [MONO role]", feel:"Kashmiri roof slate · pitched to slide snow · weathered grey-blue-green", slots:{BODY:"#e8ecec",PANEL:"#f4f8f8",INK:"#0a1418",BRAND:"#48484c",ACT:"#28282c",OK:"#384a3a",ROW:"#dce0e0"} },
+  { id:"ksh-04-sozni", family:"kashmir", name:"04 · سوزنی SOZNI", feel:"Single-needle embroidery · 2 years per shawl · 200+ thread colors · both faces identical", slots:{BODY:"#e8e4d8",PANEL:"#f0ece0",INK:"#2a1828",BRAND:"#c84818",ACT:"#1a3a90",OK:"#2a5a2a",ROW:"#dcd8cc"} },
+  { id:"ksh-05-pheran", family:"kashmir", name:"05 · پہرن PHERAN", feel:"Turquoise women's pheran · kangri ember inside · my mother had one", slots:{BODY:"#7ab8c0",PANEL:"#8ac4cc",INK:"#08181a",BRAND:"#d8482a",ACT:"#1a3a90",OK:"#2a5a2a",ROW:"#62a4ac"} },
+  { id:"ksh-06-saffron", family:"kashmir", name:"06 · زعفران SAFFRON", feel:"Pampore Karewa plateau · 150,000 flowers = 1 kg · 1 of 3 places on earth", slots:{BODY:"#b83018",PANEL:"#c84028",INK:"#f4ecd8",BRAND:"#f0c820",ACT:"#1a0a08",OK:"#f4ecd8",ROW:"#982010"} },
+  { id:"ksh-07-chinar", family:"kashmir", name:"07 · چنار CHINAR", feel:"Kashmiri maple · only grows here in India · Mughal-planted · 400-year-old trees", slots:{BODY:"#c0481a",PANEL:"#d0582a",INK:"#f4ecd8",BRAND:"#f0c820",ACT:"#1a3a90",OK:"#2a5a2a",ROW:"#a03812"} },
+  { id:"ksh-08-ch", family:"kashmir", name:"08 · کاغذی PAPIER-MÂCHÉ", feel:"Persian-Sufi origin · Mir Sayyid Ali Hamadani 14C · Naqaash master families", slots:{BODY:"#1a3a90",PANEL:"#2a4aa0",INK:"#f0c820",BRAND:"#f0c820",ACT:"#c8281a",OK:"#2a8a4a",ROW:"#0a2a78"} },
+  { id:"ksh-09-dawn", family:"kashmir", name:"09 · CURFEW DAWN", feel:"Srinagar · sannaata · the silence that has weight · the political slot", slots:{BODY:"#e8e4dc",PANEL:"#f2eee6",INK:"#1a1814",BRAND:"#d8a868",ACT:"#4a5a3a",OK:"#6a6a5a",ROW:"#dcd8d0"} },
+  { id:"ksh-10-dusk", family:"kashmir", name:"10 · DAL LAKE DUSK [DARK role]", feel:"Shikara on still water · lotus pads catching last sun · houseboats toward Hazratbal", slots:{BODY:"#08182a",PANEL:"#142438",INK:"#f0c870",BRAND:"#c0481a",ACT:"#4a6a8a",OK:"#6a9a3a",ROW:"#14283a"} },
+  // INDIA · EAST
+  { id:"ine-01-whitewash", family:"india-east", name:"01 · ঠাকুরবাড়ি TAGORE WHITEWASH [LIGHT role]", feel:"Jorasanko Thakur Bari 1784 · where Tagore was born and Gitanjali was written", slots:{BODY:"#f4e8e0",PANEL:"#fcf0e8",INK:"#2a1a18",BRAND:"#b83820",ACT:"#1a3a90",OK:"#3a7a3a",ROW:"#ecdcd0"} },
+  { id:"ine-02-patachitra", family:"india-east", name:"02 · ପଟ୍ଟଚିତ୍ର PATACHITRA [WARM role]", feel:"Odisha palm-leaf manuscript painting · 12th century · Raghurajpur village", slots:{BODY:"#e8cc98",PANEL:"#f0d4a8",INK:"#2a1808",BRAND:"#b83820",ACT:"#1a3a90",OK:"#3a7a3a",ROW:"#d8bc88"} },
+  { id:"ine-03-limestone", family:"india-east", name:"03 · KHASI LIMESTONE [MONO role]", feel:"Cherrapunji + Mawsynram · wettest places on earth · India's longest cave system", slots:{BODY:"#dde2d8",PANEL:"#ecf0e8",INK:"#0a1208",BRAND:"#4a504a",ACT:"#28302a",OK:"#384a38",ROW:"#d0d6cc"} },
+  { id:"ine-04-wheel", family:"india-east", name:"04 · କୋଣାର୍କ KONARK WHEEL", feel:"13C Sun Temple as a stone chariot · 24 wheels (hours) + 7 horses (days) · UNESCO 1984", slots:{BODY:"#c8a060",PANEL:"#d8b070",INK:"#2a1808",BRAND:"#b83820",ACT:"#1a3a90",OK:"#3a7a3a",ROW:"#b88c50"} },
+  { id:"ine-05-yatra", family:"india-east", name:"05 · ଜଗନ୍ନାଥ JAGANNATH RATH YATRA", feel:"Puri · the chariot festival that gave English the word 'juggernaut' · 4-color deity discipline", slots:{BODY:"#f0c020",PANEL:"#f8c830",INK:"#1a0a08",BRAND:"#c01010",ACT:"#1a0a08",OK:"#f8f4ec",ROW:"#d8a818"} },
+  { id:"ine-06-bodhi", family:"india-east", name:"06 · बोधि BODHI", feel:"Bodh Gaya · the tree under which Buddha attained enlightenment ~528 BCE · UNESCO 2002", slots:{BODY:"#6a8a3a",PANEL:"#7a9a4a",INK:"#f0e8d0",BRAND:"#d8581a",ACT:"#b83820",OK:"#f0c820",ROW:"#5a7a2a"} },
+  { id:"ine-07-kamakhya", family:"india-east", name:"07 · কামাখ্যা KAMAKHYA", feel:"Guwahati Nilachal Hill · most important Shakti pith · Ambubachi Mela", slots:{BODY:"#8a1818",PANEL:"#9a2828",INK:"#f4ecd8",BRAND:"#f0c820",ACT:"#f4ecd8",OK:"#1a0a08",ROW:"#6a1010"} },
+  { id:"ine-08-festival", family:"india-east", name:"08 · HORNBILL FESTIVAL", feel:"Kohima December · 17 Naga tribes together · biggest cultural event in NE India", slots:{BODY:"#2a1a18",PANEL:"#3a2a28",INK:"#f0c820",BRAND:"#c01818",ACT:"#f4ecd8",OK:"#2a8a4a",ROW:"#1a0a08"} },
+  { id:"ine-09-monastery", family:"india-east", name:"09 · TAWANG MONASTERY", feel:"Arunachal · 10,000 ft · birthplace of 6th Dalai Lama · disputed Tibet border", slots:{BODY:"#b8281a",PANEL:"#c8382a",INK:"#f0c820",BRAND:"#f0c820",ACT:"#f4ecd8",OK:"#1a0a08",ROW:"#982010"} },
+  { id:"ine-10-bridges", family:"india-east", name:"10 · LIVING ROOT BRIDGES", feel:"Khasi Meghalaya · Ficus elastica roots trained for 30 years · the only living architecture on earth", slots:{BODY:"#2a4a1a",PANEL:"#3a5a2a",INK:"#f4ecd8",BRAND:"#8a5a2a",ACT:"#1a2a08",OK:"#b8a060",ROW:"#1a3a0a"} },
+  { id:"ine-11-sangai", family:"india-east", name:"11 · LOKTAK SANGAI", feel:"Manipur · the only floating lake on earth · dancing deer recovered from 14 to 260", slots:{BODY:"#6a9a8a",PANEL:"#7aaa9a",INK:"#1a2a28",BRAND:"#b8341a",ACT:"#1a3a90",OK:"#2a6a3a",ROW:"#5a8a7a"} },
+  { id:"ine-12-predawn", family:"india-east", name:"12 · KANCHENJUNGA PRE-DAWN [DARK role]", feel:"World's 3rd highest mountain · first light from Tiger Hill · never summited out of respect", slots:{BODY:"#06101e",PANEL:"#101a2a",INK:"#f8e4a0",BRAND:"#d8a868",ACT:"#4a6a8a",OK:"#c0c8d4",ROW:"#0c1828"} },
+  // INDIA · SOUTH
+  { id:"ins-01-mundu", family:"india-south", name:"01 · മുണ്ട് MUNDU [LIGHT role]", feel:"Kerala men's white cotton wraparound · worn by everyone, across caste and religion", slots:{BODY:"#f8f6ec",PANEL:"#fdfbf4",INK:"#1a1a18",BRAND:"#c8341a",ACT:"#1a3a90",OK:"#2a5a2a",ROW:"#ece8de"} },
+  { id:"ins-02-sandalwood", family:"india-south", name:"02 · ಚಂದನ MYSORE SANDALWOOD [WARM role]", feel:"Santalum album · 400 years of Mysore Maharaja monopoly · Veerappan", slots:{BODY:"#e8c890",PANEL:"#f0d4a0",INK:"#2a1808",BRAND:"#c8341a",ACT:"#1a3a90",OK:"#2a5a2a",ROW:"#d8b878"} },
+  { id:"ins-03-granite", family:"india-south", name:"03 · ಹಂಪಿ HAMPI GRANITE [MONO role]", feel:"Vijayanagara empire ruins · second largest medieval city on earth · UNESCO 1986", slots:{BODY:"#d8d0c4",PANEL:"#e4dccc",INK:"#1a1208",BRAND:"#5a4838",ACT:"#3a2a1c",OK:"#4a3a28",ROW:"#c8c0b4"} },
+  { id:"ins-04-bronze", family:"india-south", name:"04 · சோழ வெண்கலம் CHOLA BRONZE", feel:"9–13C Tamil dynasty · lost-wax bronze · the highest refinement of metal sculpture in world history", slots:{BODY:"#5a3818",PANEL:"#6a4828",INK:"#f0c870",BRAND:"#f0c870",ACT:"#f4ecd8",OK:"#1a0808",ROW:"#3a2010"} },
+  { id:"ins-05-meenakshi", family:"india-south", name:"05 · மீனாட்சி MADURAI MEENAKSHI", feel:"14 gopurams · 33,000 polychrome stucco figures · the goddess is the senior deity", slots:{BODY:"#d8281a",PANEL:"#e83828",INK:"#f4ecd8",BRAND:"#f0c820",ACT:"#1a3a90",OK:"#2a8a4a",ROW:"#b81810"} },
+  { id:"ins-06-pondicherry", family:"india-south", name:"06 · PONDICHERRY", feel:"India's only French quarter · 280 years French · Auroville · street signs in French", slots:{BODY:"#e8c060",PANEL:"#f0c870",INK:"#2a1a08",BRAND:"#c83838",ACT:"#1a4a90",OK:"#2a8a4a",ROW:"#d4ac50"} },
+  { id:"ins-07-theyyam", family:"india-south", name:"07 · തെയ്യം THEYYAM", feel:"North Kerala possession ritual · lower-caste men become gods · upper castes touch their feet", slots:{BODY:"#c01818",PANEL:"#d02828",INK:"#f4ecd8",BRAND:"#f4ecd8",ACT:"#1a0a08",OK:"#f0c820",ROW:"#a01010"} },
+  { id:"ins-08-lepakshi", family:"india-south", name:"08 · లేపాక్షి LEPAKSHI", feel:"Vijayanagara temple · the hanging pillar · the largest surviving Vijayanagara murals", slots:{BODY:"#b86038",PANEL:"#c87048",INK:"#1a0808",BRAND:"#f0c820",ACT:"#4a6a2a",OK:"#f4ecd8",ROW:"#a05028"} },
+  { id:"ins-09-charminar", family:"india-south", name:"09 · چارمینار CHARMINAR", feel:"1591 Hyderabad · plague monument · 400 years of the world's pearl trade", slots:{BODY:"#c8a058",PANEL:"#d4ac68",INK:"#2a1a08",BRAND:"#f4ecd8",ACT:"#1a3a90",OK:"#2a5a2a",ROW:"#b89048"} },
+  { id:"ins-10-night", family:"india-south", name:"10 · BACKWATER NIGHT [DARK role]", feel:"Kettuvallam on Vembanad Lake · lantern light on still water · the most Kerala thing in Kerala", slots:{BODY:"#0a1a18",PANEL:"#142a26",INK:"#f0c870",BRAND:"#d8482a",ACT:"#4a8a8a",OK:"#6a9a3a",ROW:"#1a2a26"} },
+  // MEXICO
+  { id:"mx-01-cal", family:"mexico", name:"01 · CAL [LIGHT role]", feel:"Encalado · slaked lime wash · Yucatán haciendas to Oaxacan churchyards", slots:{BODY:"#f8f6f0",PANEL:"#ffffff",INK:"#1a1a18",BRAND:"#c8302a",ACT:"#1a4290",OK:"#4a7a2a",ROW:"#efede4"} },
+  { id:"mx-02-amate", family:"mexico", name:"02 · AMATE [WARM role]", feel:"Otomí bark paper · pre-Hispanic codices · San Pablito Pahuatlán", slots:{BODY:"#f0e4cc",PANEL:"#f8efd6",INK:"#3a2008",BRAND:"#c8302a",ACT:"#1a4290",OK:"#4a7a2a",ROW:"#e4d4b0"} },
+  { id:"mx-03-obsidiana", family:"mexico", name:"03 · OBSIDIANA [MONO role]", feel:"Volcanic glass · itztli · sharper than steel · still used in fine surgery", slots:{BODY:"#f3f3f2",PANEL:"#ffffff",INK:"#0a0a0c",BRAND:"#4a4a48",ACT:"#2a2a28",OK:"#3a4a30",ROW:"#e6e6e4"} },
+  { id:"mx-04-buganvilia", family:"mexico", name:"04 · BUGANVILIA", feel:"Barragán pink · Casa Gilardi 1976 · the boldest pink in the library", slots:{BODY:"#e85590",PANEL:"#f06598",INK:"#f4ecd8",BRAND:"#f0c820",ACT:"#1a4290",OK:"#2a8a4a",ROW:"#c84878"} },
+  { id:"mx-05-nopal", family:"mexico", name:"05 · NOPAL", feel:"Prickly pear cactus · Aztec founding myth · Tenochtitlán's founding sign", slots:{BODY:"#e8f0d8",PANEL:"#f4faea",INK:"#1a2812",BRAND:"#c8302a",ACT:"#1a4290",OK:"#4a7a2a",ROW:"#d8e6c0"} },
+  { id:"mx-06-chil", family:"mexico", name:"06 · CEMPASÚCHIL", feel:"Marigold · Día de Muertos petal path · Aztec-domesticated flower", slots:{BODY:"#f8c468",PANEL:"#fcd078",INK:"#2a1208",BRAND:"#c8302a",ACT:"#1a4290",OK:"#4a7a2a",ROW:"#e8a848"} },
+  { id:"mx-07-talavera", family:"mexico", name:"07 · TALAVERA", feel:"Puebla cobalt-on-white tile · Spanish-Mudéjar-Islamic-Chinese lineage · GI-locked", slots:{BODY:"#e0e8f4",PANEL:"#f4f7fc",INK:"#0a1a48",BRAND:"#c8302a",ACT:"#1a42a0",OK:"#4a7a2a",ROW:"#cdd8ec"} },
+  { id:"mx-08-barro", family:"mexico", name:"08 · BARRO", feel:"Mexican clay traditions · Oaxacan black, Tonalá red, volcanic tezontle", slots:{BODY:"#f4d8c0",PANEL:"#fce8d2",INK:"#3a1208",BRAND:"#c8281a",ACT:"#1a4290",OK:"#4a7a2a",ROW:"#e8c4a4"} },
+  { id:"mx-09-azul", family:"mexico", name:"09 · CASA AZUL", feel:"Frida Kahlo's blue house in Coyoacán · most visited single-artist museum in Latin America", slots:{BODY:"#2a78a0",PANEL:"#3a88b0",INK:"#f4ecd8",BRAND:"#f0c820",ACT:"#c8302a",OK:"#4a7a2a",ROW:"#1a6890"} },
+  { id:"mx-10-muertos", family:"mexico", name:"10 · NOCHE DE MUERTOS [DARK role]", feel:"Day of the Dead night · ofrenda lit by marigold candles · Aztec + Catholic hybrid", slots:{BODY:"#0c0a18",PANEL:"#161220",INK:"#f5dca0",BRAND:"#d83a18",ACT:"#4a6ad0",OK:"#8aaa3a",ROW:"#1a141e"} },
+  // MOROCCO
+  { id:"ma-01-tadelakt", family:"morocco", name:"01 · تادلكت TADELAKT [LIGHT role]", feel:"Polished lime-soap riad wall · Almohad-era technique · self-healing", slots:{BODY:"#f6f2e8",PANEL:"#fdfaf0",INK:"#2a1a08",BRAND:"#b8401a",ACT:"#2a4cc8",OK:"#3a8a4a",ROW:"#ece5d4"} },
+  { id:"ma-02-sahara", family:"morocco", name:"02 · صحراء SAHARA [WARM role]", feel:"Erg Chebbi dunes at golden hour · 150m high · the cream-amber of shifting sand", slots:{BODY:"#f4e4c0",PANEL:"#fcecc8",INK:"#3a1f08",BRAND:"#b8401a",ACT:"#2a4cc8",OK:"#3a8a4a",ROW:"#e8d4a8"} },
+  { id:"ma-03-khol", family:"morocco", name:"03 · كحل KHOL [MONO role]", feel:"Antimony eye powder · 5,000 years in continuous use · worn by both sexes", slots:{BODY:"#f3f3f1",PANEL:"#ffffff",INK:"#08080a",BRAND:"#4a4a48",ACT:"#2a2a28",OK:"#3a4a30",ROW:"#e6e6e4"} },
+  { id:"ma-04-marrakech", family:"morocco", name:"04 · مراكش MARRAKECH", feel:"The Red City · Madīnat al-Ḥamrā' · pisé earthwall medina · color mandated by law", slots:{BODY:"#b85028",PANEL:"#c86038",INK:"#f4ecd8",BRAND:"#f4ecd8",ACT:"#f0c820",OK:"#2a8a4a",ROW:"#982010"} },
+  { id:"ma-05-na", family:"morocco", name:"05 · نعناع NA'NA", feel:"Spearmint · the national drink · poured from a height into small glasses", slots:{BODY:"#e0ecd8",PANEL:"#f0f6e8",INK:"#102814",BRAND:"#b8401a",ACT:"#2a4cc8",OK:"#2a7a3a",ROW:"#d0e0c8"} },
+  { id:"ma-06-zaafran", family:"morocco", name:"06 · زعفران ZAAFRAN", feel:"Taliouine saffron · Siroua volcanic slopes · 3rd largest saffron producer on earth", slots:{BODY:"#e8b848",PANEL:"#f0c458",INK:"#3a1808",BRAND:"#b8401a",ACT:"#2a4cc8",OK:"#3a8a4a",ROW:"#d4a438"} },
+  { id:"ma-07-chefchaouen", family:"morocco", name:"07 · شفشاون CHEFCHAOUEN", feel:"The blue village · Rif mountains · 1471 Andalusi Moorish + Jewish exile refuge", slots:{BODY:"#4068c8",PANEL:"#5078d8",INK:"#f4ecd8",BRAND:"#f4ecd8",ACT:"#f0c820",OK:"#2a8a4a",ROW:"#2850a8"} },
+  { id:"ma-08-henna", family:"morocco", name:"08 · حناء HENNA", feel:"Lawsonia inermis · 4,000 years · laylat al-henna — the wedding-night ritual", slots:{BODY:"#8a4a28",PANEL:"#9a5a38",INK:"#f4ecd8",BRAND:"#f0c820",ACT:"#1a3a90",OK:"#2a8a4a",ROW:"#6a3a18"} },
+  { id:"ma-09-essaouira", family:"morocco", name:"09 · الصويرة ESSAOUIRA", feel:"Atlantic fishing port · Portuguese ramparts · Hendrix + Orson Welles", slots:{BODY:"#e0eaee",PANEL:"#f0f6f8",INK:"#0f2030",BRAND:"#b8401a",ACT:"#1a5a8a",OK:"#3a8a4a",ROW:"#d0dee2"} },
+  { id:"ma-10-lail", family:"morocco", name:"10 · ليل LAIL [DARK role]", feel:"Sahara night · one of the darkest skies on earth · brass lantern glow", slots:{BODY:"#0a0c14",PANEL:"#14161e",INK:"#f0d690",BRAND:"#d8482a",ACT:"#4a6ad8",OK:"#6aaa3a",ROW:"#1a1820"} },
+  // IRAN
+  { id:"ir-01-sang", family:"iran", name:"01 · سنگ SANG [LIGHT role]", feel:"Persepolis travertine · Apadana columns at first light · oldest empire in the library", slots:{BODY:"#f4f1e8",PANEL:"#fbf8ee",INK:"#2a1a0a",BRAND:"#b8281a",ACT:"#1a3aa0",OK:"#5a7a2a",ROW:"#ebe5d4"} },
+  { id:"ir-02-khesht", family:"iran", name:"02 · خشت KHESHT [WARM role]", feel:"Yazd mud-brick · UNESCO 2017 · 2,000-year-old badgir wind towers", slots:{BODY:"#f0dcc0",PANEL:"#f8e8cc",INK:"#3a1a08",BRAND:"#b8281a",ACT:"#1a3aa0",OK:"#5a7a2a",ROW:"#e4ccaa"} },
+  { id:"ir-03-morakkab", family:"iran", name:"03 · مرکب MORAKKAB [MONO role]", feel:"Nasta'liq ink · soot + gum arabic · the most beautiful hand-drawn script", slots:{BODY:"#f4f3f0",PANEL:"#fffefa",INK:"#0a0a08",BRAND:"#4a4a48",ACT:"#2a2a28",OK:"#3a4a30",ROW:"#e8e7e2"} },
+  { id:"ir-04-gol", family:"iran", name:"04 · گل GOL", feel:"Nasir al-Mulk Pink Mosque · 90 minutes of colored light · Shiraz 1888", slots:{BODY:"#e06080",PANEL:"#e87090",INK:"#f4ecd8",BRAND:"#f0c820",ACT:"#1a3aa0",OK:"#f4ecd8",ROW:"#c85070"} },
+  { id:"ir-05-pesteh", family:"iran", name:"05 · پسته PESTEH", feel:"Kerman pistachio · Akbari variety · 4,000 years of cultivation · the garden tree", slots:{BODY:"#ecf0d0",PANEL:"#f6f8e0",INK:"#1a2008",BRAND:"#b8281a",ACT:"#1a3aa0",OK:"#5a7a2a",ROW:"#dee2bc"} },
+  { id:"ir-06-zaafaran", family:"iran", name:"06 · زعفران ZAAFARAN", feel:"Khorasan tahdig · Iran grows 90% of the world's saffron · the everyday gold", slots:{BODY:"#e8a830",PANEL:"#f0b440",INK:"#3a1808",BRAND:"#b8281a",ACT:"#1a3aa0",OK:"#5a7a2a",ROW:"#d49020"} },
+  { id:"ir-07-lajvard", family:"iran", name:"07 · لاجورد LAJVARD", feel:"Isfahan Blue · Safavid cobalt · the ancestor of every cobalt in the library", slots:{BODY:"#0a2a80",PANEL:"#1a3a90",INK:"#f0c820",BRAND:"#f0c820",ACT:"#f4ecd8",OK:"#2a8a4a",ROW:"#001868"} },
+  { id:"ir-08-ajor", family:"iran", name:"08 · آجر AJOR", feel:"Kashan brick · Sasanian-origin · the return of brick in contemporary Tehran", slots:{BODY:"#d89868",PANEL:"#e0a878",INK:"#3a0e08",BRAND:"#c8281a",ACT:"#1a3aa0",OK:"#5a6a1a",ROW:"#c08858"} },
+  { id:"ir-09-firouzeh", family:"iran", name:"09 · فیروزه FIROUZEH", feel:"Nishapur turquoise · 2,000 year old mines · Imam Mosque dome · saturated architectural blue-green", slots:{BODY:"#2a9a98",PANEL:"#3aaaa8",INK:"#f4ecd8",BRAND:"#f0c820",ACT:"#1a3a90",OK:"#2a8a4a",ROW:"#1a8a88"} },
+  { id:"ir-10-yalda", family:"iran", name:"10 · شب یلدا SHAB-E YALDA [DARK role]", feel:"Winter solstice · 7,000 years pre-Zoroastrian · Hafez, pomegranate, stay awake till dawn", slots:{BODY:"#14080c",PANEL:"#1e0e14",INK:"#f0c870",BRAND:"#d83828",ACT:"#4a6ac8",OK:"#7a9a3a",ROW:"#1e0c12"} },
+  // SCANDINAVIA
+  { id:"sc-01-sn", family:"scandinavia", name:"01 · SNÖ [LIGHT role]", feel:"First snowfall, frozen lake. Coolest white in the library.", slots:{BODY:"#f6f8f8",PANEL:"#ffffff",INK:"#0f1420",BRAND:"#9c3a28",ACT:"#1a5a6a",OK:"#2a5a3a",ROW:"#eaecec"} },
+  { id:"sc-02-lin", family:"scandinavia", name:"02 · LIN [WARM role]", feel:"Nordic flax linen, summer cottage. Warm cream anchor.", slots:{BODY:"#f0e8d4",PANEL:"#f8f1de",INK:"#2a1c08",BRAND:"#9c3a28",ACT:"#1a5a6a",OK:"#2a5a3a",ROW:"#e6dcc0"} },
+  { id:"sc-03-granit", family:"scandinavia", name:"03 · GRANIT [MONO role]", feel:"Bohuslän granite, rune stone. Cool grey mono.", slots:{BODY:"#f1f2f3",PANEL:"#ffffff",INK:"#0a0c12",BRAND:"#48484c",ACT:"#28282c",OK:"#384a38",ROW:"#e4e5e7"} },
+  { id:"sc-04-falu", family:"scandinavia", name:"04 · FALU", feel:"Dalarna red barn, Falun copper-mine oxide. Iconic Sweden.", slots:{BODY:"#f0d8cc",PANEL:"#f8e4d8",INK:"#3a0e08",BRAND:"#9c3a28",ACT:"#1a5a6a",OK:"#2a5a3a",ROW:"#e4c4b4"} },
+  { id:"sc-05-fjord", family:"scandinavia", name:"05 · FJORD", feel:"Glacier-fed fjord water, sea-green still surface.", slots:{BODY:"#dceae8",PANEL:"#ecf4f2",INK:"#0a2830",BRAND:"#9c3a28",ACT:"#1a5a6a",OK:"#2a5a3a",ROW:"#c8dcd8"} },
+  { id:"sc-06-skogsljus", family:"scandinavia", name:"06 · SKOGSLJUS", feel:"Lapland reindeer moss, birch grove sunlight. Pale lichen sage.", slots:{BODY:"#e8eee0",PANEL:"#f4f8ec",INK:"#1a2810",BRAND:"#9c3a28",ACT:"#1a5a6a",OK:"#2a5a3a",ROW:"#d4dec4"} },
+  { id:"sc-07-aurora", family:"scandinavia", name:"07 · AURORA", feel:"Faint northern sky before aurora bursts. Only palette with violet brand.", slots:{BODY:"#dee6e8",PANEL:"#ecf2f4",INK:"#0e1828",BRAND:"#7a3a8a",ACT:"#2a8a7a",OK:"#3a7a4a",ROW:"#cbd6da"} },
+  { id:"sc-08-gustaviansk", family:"scandinavia", name:"08 · GUSTAVIANSK", feel:"Drottningholm interior, pale grey-blue panel walls. Restrained.", slots:{BODY:"#e6ecf0",PANEL:"#f4f8fa",INK:"#1a2438",BRAND:"#9c3a28",ACT:"#1a4a6a",OK:"#2a5a3a",ROW:"#d2dce4"} },
+  { id:"sc-09-vallmo", family:"scandinavia", name:"09 · VALLMO", feel:"Marimekko Unikko, Helsinki design. Brighter coral-red than Falu.", slots:{BODY:"#fce0d4",PANEL:"#fff0e8",INK:"#3a0a08",BRAND:"#d83828",ACT:"#1a5a6a",OK:"#2a5a3a",ROW:"#f4c4b4"} },
+  { id:"sc-10-polarnatt", family:"scandinavia", name:"10 · POLARNATT [DARK role]", feel:"Tromsø polar night, no sun for weeks. Coolest dark in library.", slots:{BODY:"#08101a",PANEL:"#0e1824",INK:"#e8eef4",BRAND:"#d8482a",ACT:"#3a8a9a",OK:"#5a9a4a",ROW:"#141e2c"} },
+  // WEST AFRICA
+  { id:"waf-01-baobab", family:"west-africa", name:"01 · BAOBAB [LIGHT role]", feel:"Senegalese baobab bark, savanna pale dawn. Grey-warm white.", slots:{BODY:"#f6f3ec",PANEL:"#fdfbf4",INK:"#1a1408",BRAND:"#b81848",ACT:"#08184a",OK:"#2a8a3a",ROW:"#ece8de"} },
+  { id:"waf-02-fonio", family:"west-africa", name:"02 · FONIO [WARM role]", feel:"Fonio grain, oldest cultivated cereal in Africa. Cream anchor.", slots:{BODY:"#f4ecd0",PANEL:"#fcf3da",INK:"#2a1808",BRAND:"#b81848",ACT:"#08184a",OK:"#2a8a3a",ROW:"#e8debc"} },
+  { id:"waf-03-kaolin", family:"west-africa", name:"03 · KAOLIN [MONO role]", feel:"White clay used in ritual body painting. Pale grey-white mono.", slots:{BODY:"#f4f2ee",PANEL:"#ffffff",INK:"#08080a",BRAND:"#4a4a48",ACT:"#2a2a28",OK:"#3a4a30",ROW:"#e8e6e2"} },
+  { id:"waf-04-re", family:"west-africa", name:"04 · ADÌRE", feel:"Yoruba tied-and-dyed indigo (Nigeria). Deepest indigo ground in library.", slots:{BODY:"#d4ddec",PANEL:"#e6ecf4",INK:"#08144a",BRAND:"#b81848",ACT:"#08184a",OK:"#2a8a3a",ROW:"#c0ccdc"} },
+  { id:"waf-05-kente", family:"west-africa", name:"05 · KENTE", feel:"Akan/Asante royal cloth (Ghana). Most intense gold in library.", slots:{BODY:"#fce4a0",PANEL:"#ffeab8",INK:"#2a0a08",BRAND:"#b81848",ACT:"#08184a",OK:"#2a8a3a",ROW:"#f4d488"} },
+  { id:"waf-06-lan", family:"west-africa", name:"06 · BÒGÒLAN", feel:"Bambara fermented-mud resist on cotton (Mali). Earthy geometric.", slots:{BODY:"#ece0c4",PANEL:"#f6ead0",INK:"#2a1208",BRAND:"#a81840",ACT:"#1a2858",OK:"#3a6a2a",ROW:"#e0d4b4"} },
+  { id:"waf-07-bissap", family:"west-africa", name:"07 · BISSAP", feel:"Hibiscus tea (Wolof Senegal). Only saturated cool magenta in library.", slots:{BODY:"#f8d4dc",PANEL:"#fce4ea",INK:"#2a0814",BRAND:"#b81848",ACT:"#08184a",OK:"#2a8a3a",ROW:"#ecbcc8"} },
+  { id:"waf-08-x", family:"west-africa", name:"08 · SÀHĚL", feel:"Harmattan dust haze, dry-season Bamako. More grey-tan than brick.", slots:{BODY:"#ecd4a8",PANEL:"#f6e2bc",INK:"#3a1f08",BRAND:"#b81848",ACT:"#08184a",OK:"#2a8a3a",ROW:"#e0c490"} },
+  { id:"waf-09-niger", family:"west-africa", name:"09 · NIGER", feel:"Niger River silt, brown-green water. Distinct from Pacha and Fjord.", slots:{BODY:"#d8dec0",PANEL:"#e6eccc",INK:"#1a200c",BRAND:"#b81848",ACT:"#08184a",OK:"#2a8a3a",ROW:"#c4cba8"} },
+  { id:"waf-10-run", family:"west-africa", name:"10 · ÒRUN [DARK role]", feel:"Yoruba night sky, kente-gold ink, electric indigo accent. Most vivid dark.", slots:{BODY:"#08081a",PANEL:"#14142a",INK:"#f0d2a0",BRAND:"#d83858",ACT:"#4a6ad8",OK:"#5aaa3a",ROW:"#1a1428"} },
+  // ITALY
+  { id:"it-01-carrara", family:"italy", name:"01 · CARRARA [LIGHT role]", feel:"Apuan Alps marble, sculptor's block. Subtle cool grey.", slots:{BODY:"#f6f6f4",PANEL:"#ffffff",INK:"#1a1a1a",BRAND:"#b8281a",ACT:"#2a3aa8",OK:"#2a5a2a",ROW:"#ebebe8"} },
+  { id:"it-02-pergamena", family:"italy", name:"02 · PERGAMENA [WARM role]", feel:"Renaissance manuscript parchment, Vatican library. Yellowed cream.", slots:{BODY:"#f0e4c4",PANEL:"#f8edd0",INK:"#2a1808",BRAND:"#b8281a",ACT:"#2a3aa8",OK:"#2a5a2a",ROW:"#e4d4a8"} },
+  { id:"it-03-serena", family:"italy", name:"03 · PIETRA SERENA [MONO role]", feel:"Brunelleschi's Florence, grey pietra serena trim. Cool slate.", slots:{BODY:"#ececea",PANEL:"#fafaf8",INK:"#18181c",BRAND:"#4a4a48",ACT:"#28282c",OK:"#384a30",ROW:"#e0e0de"} },
+  { id:"it-04-pompeiano", family:"italy", name:"04 · POMPEIANO", feel:"Villa of the Mysteries, Pompeii fresco red wall. Warm cinnabar wash.", slots:{BODY:"#f0c4ac",PANEL:"#f8d4bc",INK:"#3a0e08",BRAND:"#c8281a",ACT:"#2a3aa8",OK:"#2a5a2a",ROW:"#e4ac90"} },
+  { id:"it-05-siena", family:"italy", name:"05 · SIENA", feel:"Piazza del Campo, Tuscan brick city. Sienna terracotta earth.", slots:{BODY:"#e8c098",PANEL:"#f4d2ac",INK:"#3a1208",BRAND:"#b8281a",ACT:"#2a3aa8",OK:"#2a5a2a",ROW:"#dca878"} },
+  { id:"it-06-cipresso", family:"italy", name:"06 · CIPRESSO", feel:"Val d'Orcia cypress avenues, Tuscan landscape. Olive-grey green.", slots:{BODY:"#d8e0c8",PANEL:"#e6ecd6",INK:"#1a2814",BRAND:"#b8281a",ACT:"#2a3aa8",OK:"#2a5a2a",ROW:"#c4cdb4"} },
+  { id:"it-07-lapislazzuli", family:"italy", name:"07 · LAPISLAZZULI", feel:"Renaissance Madonna's robe, Giotto. Slightly more violet than Iran's Lajvard.", slots:{BODY:"#d4dcec",PANEL:"#e8eef8",INK:"#08184a",BRAND:"#b8281a",ACT:"#2a3aa8",OK:"#2a5a2a",ROW:"#c0c8dc"} },
+  { id:"it-08-oro", family:"italy", name:"08 · ORO", feel:"Ravenna mosaic, Byzantine icon background. Antique amber-gold.", slots:{BODY:"#f0d488",PANEL:"#f8e2a4",INK:"#3a1808",BRAND:"#b8281a",ACT:"#2a3aa8",OK:"#2a5a2a",ROW:"#e4c068"} },
+  { id:"it-09-espresso", family:"italy", name:"09 · ESPRESSO", feel:"Cappuccino crema, ground espresso. Coffee-tan, café culture.", slots:{BODY:"#e0c098",PANEL:"#ecd2ac",INK:"#2a1408",BRAND:"#b8281a",ACT:"#2a3aa8",OK:"#2a5a2a",ROW:"#d4ac80"} },
+  { id:"it-10-veneziana", family:"italy", name:"10 · NOTTE VENEZIANA [DARK role]", feel:"Venetian carnival night, gold mask, lapis cape, candlelight.", slots:{BODY:"#0c0a14",PANEL:"#161024",INK:"#f0d690",BRAND:"#d83828",ACT:"#4a5ad8",OK:"#6a9a3a",ROW:"#1a142a"} },
+  // RUSSIA
+  { id:"ru-01-sneg", family:"russia", name:"01 · СНЕГ SNEG [LIGHT role]", feel:"Moscow morning snow, frozen Neva. Cool blue-tinted white.", slots:{BODY:"#f4f6f8",PANEL:"#ffffff",INK:"#0f1828",BRAND:"#c81818",ACT:"#1a3a98",OK:"#2a5230",ROW:"#e8ecf0"} },
+  { id:"ru-02-lyon", family:"russia", name:"02 · ЛЁН LYON [WARM role]", feel:"Russian flax linen, dacha tablecloth. Slightly amber cream.", slots:{BODY:"#ece4c8",PANEL:"#f6efd6",INK:"#2a1c08",BRAND:"#c81818",ACT:"#1a3a98",OK:"#2a5230",ROW:"#e2d8b4"} },
+  { id:"ru-03-peterburg", family:"russia", name:"03 · ПЕТЕРБУРГ PETERBURG [MONO role]", feel:"St Petersburg granite embankment, overcast Baltic winter.", slots:{BODY:"#ececee",PANEL:"#fafafc",INK:"#0a0c14",BRAND:"#48484c",ACT:"#28282c",OK:"#384a30",ROW:"#e0e0e2"} },
+  { id:"ru-04-gzhel", family:"russia", name:"04 · ГЖЕЛЬ GZHEL", feel:"Gzhel village folk porcelain. Cleanest cobalt-on-white in library.", slots:{BODY:"#dee4f0",PANEL:"#ecf0f8",INK:"#08144a",BRAND:"#c81818",ACT:"#1a3a98",OK:"#2a5230",ROW:"#cad2e2"} },
+  { id:"ru-05-khokhloma", family:"russia", name:"05 · ХОХЛОМА KHOKHLOMA", feel:"Folk lacquerware, gold florals on red. Bold three-color body.", slots:{BODY:"#c01818",PANEL:"#d02020",INK:"#f4dc88",BRAND:"#f4dc88",ACT:"#0a0a0a",OK:"#3a8a3a",ROW:"#a01010"} },
+  { id:"ru-06-beryoza", family:"russia", name:"06 · БЕРЁЗА BERYOZA", feel:"Silver birch bark, Levitan painting. Slightly silver-warm.", slots:{BODY:"#ecedea",PANEL:"#f7f8f5",INK:"#1a2028",BRAND:"#c81818",ACT:"#1a3a98",OK:"#2a5230",ROW:"#e0e1de"} },
+  { id:"ru-07-ikona", family:"russia", name:"07 · ИКОНА IKONA", feel:"Andrei Rublev icon gold ground, Novgorod school. Aged darker than Italy's Oro.", slots:{BODY:"#e8c878",PANEL:"#f0d488",INK:"#3a1808",BRAND:"#b81818",ACT:"#1a3a98",OK:"#2a5230",ROW:"#d4b460"} },
+  { id:"ru-08-tayga", family:"russia", name:"08 · ТАЙГА TAYGA", feel:"Siberian boreal pine, Shishkin painting. Cool blue-pine, distinct from Cipresso.", slots:{BODY:"#c8d8cc",PANEL:"#dce8de",INK:"#0f2018",BRAND:"#c81818",ACT:"#1a3a98",OK:"#2a5230",ROW:"#b4c4b8"} },
+  { id:"ru-09-sobor", family:"russia", name:"09 · СОБОР SOBOR", feel:"St Basil's Cathedral, Red Square. Pale Kremlin Senate yellow with iconic onion-dome accents.", slots:{BODY:"#f4ecd8",PANEL:"#fcf4e0",INK:"#2a1808",BRAND:"#d8385a",ACT:"#1a4ab8",OK:"#2a8a4a",ROW:"#e8debc"} },
+  { id:"ru-10-noch", family:"russia", name:"10 · НОЧЬ NOCH' [DARK role]", feel:"Russian winter night, samovar gold ink, dark blue cold.", slots:{BODY:"#08081a",PANEL:"#141428",INK:"#f0c870",BRAND:"#d82828",ACT:"#4a6ad8",OK:"#6a9a3a",ROW:"#1a1428"} },
+  // BAUHAUS
+  { id:"bh-01-weimar", family:"bauhaus", name:"01 · WEIMAR 1919 [LIGHT role]", feel:"Founding manifesto · Walter Gropius · 1 April 1919 · the cathedral of the future", slots:{BODY:"#f4ecd8",PANEL:"#fcf4e0",INK:"#1a1612",BRAND:"#d82418",ACT:"#1a3ac8",OK:"#2a5a2a",ROW:"#e8dcc0"} },
+  { id:"bh-02-dessau", family:"bauhaus", name:"02 · DESSAU 1926 [MONO role]", feel:"Gropius's new Bauhaus building · glass curtain wall · UNESCO 1996 · the single most photographed modernist building", slots:{BODY:"#f6f6f4",PANEL:"#ffffff",INK:"#0a0a0a",BRAND:"#d82418",ACT:"#1a3ac8",OK:"#384a30",ROW:"#eaeae8"} },
+  { id:"bh-03-blue", family:"bauhaus", name:"03 · KANDINSKY BLUE", feel:"The blue circle · Point and Line to Plane 1926 · form and color as a single dimension", slots:{BODY:"#1a3ac8",PANEL:"#2a4ad8",INK:"#f4f4f0",BRAND:"#f0c808",ACT:"#f4f4f0",OK:"#d82418",ROW:"#1030b8"} },
+  { id:"bh-04-yellow", family:"bauhaus", name:"04 · KANDINSKY YELLOW", feel:"The yellow triangle · acute, centrifugal, acidic · the color that hits you", slots:{BODY:"#f8d020",PANEL:"#fcdc38",INK:"#0a0a0a",BRAND:"#d82418",ACT:"#1a3ac8",OK:"#0a0a0a",ROW:"#e0b808"} },
+  { id:"bh-05-red", family:"bauhaus", name:"05 · KANDINSKY RED", feel:"The red square · grounded, heavy, stable · material weight", slots:{BODY:"#d82418",PANEL:"#e83428",INK:"#f4f4f0",BRAND:"#f0c808",ACT:"#1a3ac8",OK:"#f4f4f0",ROW:"#b81810"} },
+  { id:"bh-06-klee", family:"bauhaus", name:"06 · KLEE [WARM role]", feel:"Paul Klee · Magic Squares · the poet of the Bauhaus · watercolor warmth", slots:{BODY:"#e8c098",PANEL:"#f0cca8",INK:"#2a1a08",BRAND:"#c84828",ACT:"#1a3ac8",OK:"#4a6a2a",ROW:"#d8a880"} },
+  { id:"bh-07-barcelona", family:"bauhaus", name:"07 · MIES BARCELONA 1929", feel:"Mies van der Rohe · Barcelona Pavilion · travertine and four marbles · less is more", slots:{BODY:"#e8dcc0",PANEL:"#f0e4c8",INK:"#1a1408",BRAND:"#0a0a0a",ACT:"#c8a848",OK:"#4a6a2a",ROW:"#d8ccb0"} },
+  { id:"bh-08-wheel", family:"bauhaus", name:"08 · ITTEN COLOR WHEEL", feel:"Johannes Itten · 12-hue wheel · mystic of the Vorkurs · the foundation course", slots:{BODY:"#f4ecd8",PANEL:"#fcf4e0",INK:"#1a1612",BRAND:"#d82418",ACT:"#4a6ac8",OK:"#2a8a4a",ROW:"#e8dcc0"} },
+  { id:"bh-09-lzl", family:"bauhaus", name:"09 · GUNTA STÖLZL", feel:"Bauhaus weaving workshop · the only female master · the department that kept the school alive", slots:{BODY:"#f0e4c8",PANEL:"#f8edd4",INK:"#2a1808",BRAND:"#c88828",ACT:"#1a3ac8",OK:"#2a5a2a",ROW:"#e4d4a8"} },
+  { id:"bh-10-closed", family:"bauhaus", name:"10 · 1933 CLOSED [DARK role]", feel:"Gestapo raid · 11 April 1933 · diaspora to Chicago, Tel Aviv, Harvard, Black Mountain", slots:{BODY:"#0a0a0c",PANEL:"#14141c",INK:"#f0c808",BRAND:"#d82418",ACT:"#1a3ac8",OK:"#f4f4f0",ROW:"#1a1a1e"} },
+  // BRUTALISM
+  { id:"br-01-brut", family:"brutalism", name:"01 · BÉTON BRUT [MONO role]", feel:"Le Corbusier · raw concrete · Unité d'Habitation Marseille 1952 · the founding material", slots:{BODY:"#c8c4b8",PANEL:"#d4d0c4",INK:"#1a1812",BRAND:"#8a3818",ACT:"#2a3a5a",OK:"#4a6a2a",ROW:"#b4b0a4"} },
+  { id:"br-02-ronchamp", family:"brutalism", name:"02 · RONCHAMP [LIGHT role]", feel:"Le Corbusier · Notre-Dame-du-Haut 1955 · concrete as sculpture · UNESCO 2016", slots:{BODY:"#f0ece0",PANEL:"#f8f4e8",INK:"#1a1812",BRAND:"#2a3a5a",ACT:"#c84828",OK:"#4a6a2a",ROW:"#dcd8cc"} },
+  { id:"br-03-ia", family:"brutalism", name:"03 · SESC POMPÉIA [WARM role]", feel:"Lina Bo Bardi · São Paulo 1977-86 · concrete towers with wooden walkways · the warmest Brutalism on earth", slots:{BODY:"#c8b898",PANEL:"#d4c4a4",INK:"#1a1408",BRAND:"#c83018",ACT:"#2a3a5a",OK:"#4a6a2a",ROW:"#b4a484"} },
+  { id:"br-04-barbican", family:"brutalism", name:"04 · BARBICAN", feel:"London 1982 · Chamberlin Powell & Bon · bush-hammered concrete · tropical conservatory on the roof", slots:{BODY:"#bab6a8",PANEL:"#c6c2b4",INK:"#1a1812",BRAND:"#4a6a2a",ACT:"#2a3a5a",OK:"#6a4a28",ROW:"#a6a294"} },
+  { id:"br-05-habitat", family:"brutalism", name:"05 · HABITAT 67", feel:"Moshe Safdie · Montreal Expo 1967 · 354 stacked concrete boxes · student thesis built", slots:{BODY:"#c8c4b8",PANEL:"#d4d0c4",INK:"#1a1812",BRAND:"#2a5a78",ACT:"#c84828",OK:"#4a6a2a",ROW:"#b4b0a4"} },
+  { id:"br-06-hall", family:"brutalism", name:"06 · BOSTON CITY HALL", feel:"1968 · Kallmann McKinnell Knowles · upside-down ziggurat · America's most-hated and most-honored building", slots:{BODY:"#c0bcae",PANEL:"#ccc8ba",INK:"#1a1812",BRAND:"#2a3a4a",ACT:"#c84828",OK:"#4a6a2a",ROW:"#acaa9c"} },
+  { id:"br-07-chandigarh", family:"brutalism", name:"07 · CHANDIGARH", feel:"Le Corbusier 1953-62 · India's first planned modern city · the only Brutalist UNESCO site", slots:{BODY:"#d8c8a8",PANEL:"#e4d4b4",INK:"#1a1408",BRAND:"#c84828",ACT:"#1a3ac8",OK:"#4a6a2a",ROW:"#c4b494"} },
+  { id:"br-08-formwork", family:"brutalism", name:"08 · WOOD-GRAIN FORMWORK", feel:"Board-marked concrete · the negative of pine pressed into stone · Brutalism's signature texture", slots:{BODY:"#c8bcaa",PANEL:"#d4c8b6",INK:"#2a1e14",BRAND:"#6a4a28",ACT:"#2a3a5a",OK:"#4a6a2a",ROW:"#b4a896"} },
+  { id:"br-09-rebar", family:"brutalism", name:"09 · RUSTING REBAR", feel:"Chloride penetration · the weathering signature · structural emergency as aesthetic", slots:{BODY:"#c4bca8",PANEL:"#d0c8b4",INK:"#1a1408",BRAND:"#a84830",ACT:"#2a3a5a",OK:"#4a6a2a",ROW:"#b0a894"} },
+  { id:"br-10-night", family:"brutalism", name:"10 · BRUTALIST NIGHT [DARK role]", feel:"Concrete hulk against sodium sky · Instagram rehabilitation · the movement nobody liked until the internet arrived", slots:{BODY:"#1a1a1e",PANEL:"#24242a",INK:"#c8c4b8",BRAND:"#c84828",ACT:"#e89830",OK:"#4a6a2a",ROW:"#0a0a0e"} },
+  // MEMPHIS
+  { id:"mp-01-milan", family:"memphis", name:"01 · MILAN 1981 [LIGHT role]", feel:"Founding exhibition · Arc '74 gallery · 18 September 1981 · Bob Dylan gave it the name", slots:{BODY:"#f0e8d8",PANEL:"#f8efdc",INK:"#1a1a1c",BRAND:"#d8188a",ACT:"#1a8ac8",OK:"#f0c828",ROW:"#e4d8c4"} },
+  { id:"mp-02-bookcase", family:"memphis", name:"02 · CARLTON BOOKCASE [WARM role]", feel:"Sottsass 1981 · the signature object · totem, bookcase, sculpture · $82,000 at Sotheby's 2007", slots:{BODY:"#f4e8d4",PANEL:"#fcf0dc",INK:"#1a1a1c",BRAND:"#d8188a",ACT:"#1a8ac8",OK:"#f0c828",ROW:"#e8d8c0"} },
+  { id:"mp-03-bacterio", family:"memphis", name:"03 · BACTERIO [MONO role]", feel:"Sottsass 1978 · the squiggle pattern that preceded Memphis · still in production", slots:{BODY:"#f4f4f0",PANEL:"#ffffff",INK:"#1a1a1c",BRAND:"#1a8ac8",ACT:"#d8188a",OK:"#f0c828",ROW:"#e8e8e4"} },
+  { id:"mp-04-lavender", family:"memphis", name:"04 · LAVENDER", feel:"The Memphis pastel anchor · soft against the chaos · the color that became Golden Girls", slots:{BODY:"#d8c4e8",PANEL:"#e4d4f0",INK:"#1a1a1c",BRAND:"#f02890",ACT:"#2ab0c0",OK:"#f0c828",ROW:"#c4b0d8"} },
+  { id:"mp-05-lamp", family:"memphis", name:"05 · TAHITI LAMP", feel:"Sottsass 1981 · cartoon bird as lamp · not designed for reading", slots:{BODY:"#f088a8",PANEL:"#f898b8",INK:"#1a0a14",BRAND:"#f0c828",ACT:"#1a8ac8",OK:"#f4f4f0",ROW:"#dc7894"} },
+  { id:"mp-06-casablanca", family:"memphis", name:"06 · CASABLANCA", feel:"Sottsass sideboard 1981 · the laminate totem · cheap plastic as premium material", slots:{BODY:"#f4ecd8",PANEL:"#fcf4e0",INK:"#1a1a1c",BRAND:"#c81848",ACT:"#1a8ac8",OK:"#2a8a4a",ROW:"#e8ddcc"} },
+  { id:"mp-07-terrazzo", family:"memphis", name:"07 · TERRAZZO", feel:"15th-century Venetian marble-scraps floor · Memphis's rehabilitation of a working-class material", slots:{BODY:"#e8e0d0",PANEL:"#f4ecdc",INK:"#1a1a1c",BRAND:"#d8188a",ACT:"#1a8ac8",OK:"#f0c828",ROW:"#d8d0c0"} },
+  { id:"mp-08-pink", family:"memphis", name:"08 · HOT PINK", feel:"Memphis primary · more saturated than Barragán · the color that became the 1980s", slots:{BODY:"#f02890",PANEL:"#f838a0",INK:"#1a0a14",BRAND:"#f0c828",ACT:"#1a8ac8",OK:"#f4f4f0",ROW:"#dc1878"} },
+  { id:"mp-09-teal", family:"memphis", name:"09 · MEMPHIS TEAL", feel:"The second signature · deliberate clash with hot pink · the engine of 1980s visual clash", slots:{BODY:"#2ab0c0",PANEL:"#3ac0d0",INK:"#f4f4f0",BRAND:"#f02890",ACT:"#f0c828",OK:"#1a1a1c",ROW:"#1a9ab0"} },
+  { id:"mp-10-yellow", family:"memphis", name:"10 · ACID YELLOW", feel:"The third primary · synthetic, industrial, colder than Kandinsky", slots:{BODY:"#f8d820",PANEL:"#fce438",INK:"#1a1a1c",BRAND:"#d8188a",ACT:"#1a8ac8",OK:"#2a8a4a",ROW:"#e0c010"} },
+  { id:"mp-11-chair", family:"memphis", name:"11 · DE LUCCHI FIRST CHAIR", feel:"Michele De Lucchi 1983 · black tubular frame with floating primaries · Memphis minimalism", slots:{BODY:"#1a1a1c",PANEL:"#2a2a2c",INK:"#f4f4f0",BRAND:"#f02890",ACT:"#f0c828",OK:"#2ab0c0",ROW:"#0a0a0c"} },
+  { id:"mp-12-dissolved", family:"memphis", name:"12 · 1988 DISSOLVED [DARK role]", feel:"Sottsass walks away · 'part of the establishment it was designed to attack' · end of the party", slots:{BODY:"#0a0a0c",PANEL:"#14141c",INK:"#f4f4f0",BRAND:"#f02890",ACT:"#2ab0c0",OK:"#f0c828",ROW:"#1a1a1c"} },
+  // CYBERPUNK
+  { id:"cy-01-runner", family:"cyberpunk", name:"01 · BLADE RUNNER 1982", feel:"Ridley Scott · LA 2019 rain and neon · the founding image of the entire genre", slots:{BODY:"#0a0a18",PANEL:"#14142a",INK:"#f0d8a0",BRAND:"#f02890",ACT:"#2af8e8",OK:"#f0c828",ROW:"#1a1428"} },
+  { id:"cy-02-chiba", family:"cyberpunk", name:"02 · NEUROMANCER CHIBA", feel:"William Gibson 1984 · the book that gave the genre its name · written from photographs", slots:{BODY:"#0a0c18",PANEL:"#14162a",INK:"#2af8e8",BRAND:"#d8188a",ACT:"#f0d8a0",OK:"#c81018",ROW:"#1a1a2a"} },
+  { id:"cy-03-red", family:"cyberpunk", name:"03 · AKIRA RED", feel:"Katsuhiro Otomo 1988 · Kaneda's bike · Neo-Tokyo 2019 · the anime that broke through internationally", slots:{BODY:"#c81018",PANEL:"#d82028",INK:"#f4e8a0",BRAND:"#1a8ac8",ACT:"#f02890",OK:"#0a0a0c",ROW:"#a80810"} },
+  { id:"cy-04-shell", family:"cyberpunk", name:"04 · GHOST IN THE SHELL", feel:"Mamoru Oshii 1995 · Kusanagi diving through Hong Kong · the Matrix's confessed source", slots:{BODY:"#0a1820",PANEL:"#14242c",INK:"#2af8a0",BRAND:"#f02890",ACT:"#f0d8a0",OK:"#2af8e8",ROW:"#1a2a34"} },
+  { id:"cy-05-green", family:"cyberpunk", name:"05 · MATRIX GREEN", feel:"Wachowskis 1999 · phosphor green code rain · IBM 3270 terminal nostalgia", slots:{BODY:"#060a06",PANEL:"#0c140c",INK:"#2af838",BRAND:"#f4f4f0",ACT:"#f02890",OK:"#f0c828",ROW:"#0a120a"} },
+  { id:"cy-06-city", family:"cyberpunk", name:"06 · CP2077 NIGHT CITY", feel:"CD Projekt Red 2020 · disaster launch, cult rehabilitation · the largest cyberpunk production ever", slots:{BODY:"#0a0a18",PANEL:"#14142a",INK:"#f0d848",BRAND:"#c81848",ACT:"#2af8e8",OK:"#f02890",ROW:"#1a1428"} },
+  { id:"cy-07-tokyo", family:"cyberpunk", name:"07 · NEON TOKYO", feel:"Shinjuku Kabukicho · the real-world referent for every fictional cyberpunk city", slots:{BODY:"#0a0818",PANEL:"#14142a",INK:"#f02890",BRAND:"#1af8e8",ACT:"#f0c828",OK:"#f4f4f0",ROW:"#1a1428"} },
+  { id:"cy-08-city", family:"cyberpunk", name:"08 · KOWLOON WALLED CITY", feel:"Hong Kong enclave 1950-1994 · 50,000 people in 2.6 hectares · the densest place on earth", slots:{BODY:"#1a1a1e",PANEL:"#242428",INK:"#c8a858",BRAND:"#c82848",ACT:"#2af8e8",OK:"#4a7a1a",ROW:"#0a0a0e"} },
+  { id:"cy-09-rain", family:"cyberpunk", name:"09 · ACID RAIN", feel:"Industrial runoff · the Blade Runner weather · cyberpunk's signature atmosphere", slots:{BODY:"#1a2820",PANEL:"#243428",INK:"#a8f828",BRAND:"#f02890",ACT:"#2af8e8",OK:"#f0c828",ROW:"#0a1810"} },
+  { id:"cy-10-chrome", family:"cyberpunk", name:"10 · CHROME", feel:"Gibson's Burning Chrome 1982 · the polished inorganic surface of the near future", slots:{BODY:"#c8c8cc",PANEL:"#d4d4d8",INK:"#0a0a0e",BRAND:"#1a8ac8",ACT:"#f02890",OK:"#2af8e8",ROW:"#b4b4b8"} },
+  { id:"cy-11-pink", family:"cyberpunk", name:"11 · SYNTH PINK", feel:"Synthwave · nostalgia for a 1980s that didn't exist · Drive 2011", slots:{BODY:"#f02890",PANEL:"#f838a0",INK:"#1a0a28",BRAND:"#1af8e8",ACT:"#f0c828",OK:"#f4f4f0",ROW:"#dc1878"} },
+  { id:"cy-12-violet", family:"cyberpunk", name:"12 · ELECTRIC VIOLET", feel:"The sky color of every cyberpunk poster · Syd Mead's signature · atmospheric pollution made beautiful", slots:{BODY:"#4a1a78",PANEL:"#5a2888",INK:"#f0d8a0",BRAND:"#1af8e8",ACT:"#f02890",OK:"#f0c828",ROW:"#3a0a68"} },
+  { id:"cy-13-holographic", family:"cyberpunk", name:"13 · HOLOGRAPHIC", feel:"Chromatic aberration · Iris van Herpen · Beeple's $69 million Christie's sale", slots:{BODY:"#1a1a2a",PANEL:"#24243a",INK:"#f4f4f0",BRAND:"#c81890",ACT:"#2af8e8",OK:"#f0c828",ROW:"#0a0a1a"} },
+  { id:"cy-14-cyberdeck", family:"cyberpunk", name:"14 · CYBERDECK", feel:"Gibson's 1984 portable computer · the 2010s maker subculture that built it for real", slots:{BODY:"#1a1a1e",PANEL:"#242428",INK:"#2af8e8",BRAND:"#f02890",ACT:"#f0c828",OK:"#c81018",ROW:"#0a0a0e"} },
+  { id:"cy-15-dark", family:"cyberpunk", name:"15 · NETRUNNER DARK", feel:"The jack-in moment · consciousness leaving the body · the darkest void in the library", slots:{BODY:"#020206",PANEL:"#080812",INK:"#2af8e8",BRAND:"#f02890",ACT:"#f0c828",OK:"#c81018",ROW:"#0a0a12"} },
+  // VAPORWAVE
+  { id:"vw-01-shoppe", family:"vaporwave", name:"01 · FLORAL SHOPPE [LIGHT role]", feel:"Macintosh Plus 2011 · Ramona Andra Xavier · the founding album of the entire genre", slots:{BODY:"#f8c4d8",PANEL:"#fcd4e4",INK:"#1a0a18",BRAND:"#2ac8d8",ACT:"#f0d8a0",OK:"#c848a8",ROW:"#e8b4c8"} },
+  { id:"vw-02-statue", family:"vaporwave", name:"02 · GREEK STATUE [WARM role]", feel:"Helios, Venus, David · the single most recognizable vaporwave visual signifier", slots:{BODY:"#e8dcc4",PANEL:"#f0e4cc",INK:"#1a0a18",BRAND:"#f088c0",ACT:"#2ac8d8",OK:"#c8b8e8",ROW:"#d8cbb0"} },
+  { id:"vw-03-chrome", family:"vaporwave", name:"03 · HELVETICA CHROME [MONO role]", feel:"Wide-spaced chrome capitals · Microsoft Word 97 WordArt · the corporate font made kitsch", slots:{BODY:"#e0e0e8",PANEL:"#ecece8",INK:"#1a1a28",BRAND:"#f088c0",ACT:"#2ac8d8",OK:"#c8b8e8",ROW:"#ccccd4"} },
+  { id:"vw-04-dream", family:"vaporwave", name:"04 · CYAN DREAM", feel:"The second vaporwave anchor · pool tile, Miami Vice, Tron light cycles, early Mac OS", slots:{BODY:"#a0e8f0",PANEL:"#b4f0f8",INK:"#1a1a28",BRAND:"#f088c0",ACT:"#c8b8e8",OK:"#f4f4f0",ROW:"#88d8e0"} },
+  { id:"vw-05-dusk", family:"vaporwave", name:"05 · LAVENDER DUSK", feel:"The third vaporwave anchor · the cool purple of empty malls at 9 PM · mallsoft and vaportrap", slots:{BODY:"#c8b8e8",PANEL:"#d4c4f0",INK:"#1a1028",BRAND:"#f088c0",ACT:"#2ac8d8",OK:"#f8e8a8",ROW:"#b4a4d4"} },
+  { id:"vw-06-windows", family:"vaporwave", name:"06 · WINDOWS 95", feel:"Microsoft default desktop · teal + beige + Times New Roman · the aesthetic nobody chose", slots:{BODY:"#2a8a8a",PANEL:"#3a9a9a",INK:"#f4f4f0",BRAND:"#d8d4c8",ACT:"#f088c0",OK:"#2ac8d8",ROW:"#1a7a7a"} },
+  { id:"vw-07-silhouette", family:"vaporwave", name:"07 · PALM TREE SILHOUETTE", feel:"Miami Vice, Outrun, Magnum PI · the empty-paradise signifier · second-most iconic vaporwave image", slots:{BODY:"#0a0a28",PANEL:"#14142a",INK:"#f088c0",BRAND:"#f8e8a8",ACT:"#2ac8d8",OK:"#c8b8e8",ROW:"#1a1a3a"} },
+  { id:"vw-08-miami", family:"vaporwave", name:"08 · MIAMI 1984", feel:"The fantasy Miami that never existed · Miami Vice · a city in crisis mourned as paradise", slots:{BODY:"#f8c4d8",PANEL:"#fcd4e4",INK:"#1a1028",BRAND:"#2ac8d8",ACT:"#f8e8a8",OK:"#c8b8e8",ROW:"#e8b4c8"} },
+  { id:"vw-09-tape", family:"vaporwave", name:"09 · CITY POP TAPE", feel:"Mariya Takeuchi's Plastic Love 1984 · rediscovered by YouTube algorithm 2017 · 40 million plays", slots:{BODY:"#e8d8c4",PANEL:"#f0e0cc",INK:"#1a1028",BRAND:"#c8486a",ACT:"#2ac8d8",OK:"#f8e8a8",ROW:"#d8c4b0"} },
+  { id:"vw-10-dolphin", family:"vaporwave", name:"10 · DOLPHIN", feel:"Lisa Frank Trapper Keeper dolphin · 1980s van murals · the weirdly-specific millennial memory", slots:{BODY:"#a8d8e8",PANEL:"#b8e4f0",INK:"#1a1028",BRAND:"#f088c0",ACT:"#c8b8e8",OK:"#f8e8a8",ROW:"#94c4d4"} },
+  { id:"vw-11-night", family:"vaporwave", name:"11 · LATE NIGHT [DARK role]", feel:"3 AM moodboard · alone at a laptop with the lights off · the honest listening environment of the genre", slots:{BODY:"#0a0818",PANEL:"#14142a",INK:"#f088c0",BRAND:"#2ac8d8",ACT:"#f8e8a8",OK:"#c8b8e8",ROW:"#1a1028"} },
+  // CHERNOBYL
+  { id:"cz-01-atomgrad", family:"chernobyl", name:"01 · АТОМГРАД ATOMGRAD [LIGHT role]", feel:"Pre-1986 Pripyat science campus, sterile Soviet utopian planning.", slots:{BODY:"#f4f6f4",PANEL:"#fcfdfc",INK:"#0e1418",BRAND:"#e8c818",ACT:"#1a8ad8",OK:"#5aa818",ROW:"#e6eae6"} },
+  { id:"cz-02-pripyat", family:"chernobyl", name:"02 · ПРИПЯТЬ PRIPYAT [WARM role]", feel:"Soviet-brick apartment block, dust on linoleum, abandoned classroom.", slots:{BODY:"#ece4cc",PANEL:"#f6efd8",INK:"#2a1f10",BRAND:"#e8c818",ACT:"#1a8ad8",OK:"#5aa818",ROW:"#e2d8b8"} },
+  { id:"cz-03-svinets", family:"chernobyl", name:"03 · СВИНЕЦ SVINETS [MONO role]", feel:"Lead apron, X-ray shielding. Heaviest mono in library.", slots:{BODY:"#e8e8e6",PANEL:"#f4f4f2",INK:"#0a0a0c",BRAND:"#3a3a3c",ACT:"#1a1a1c",OK:"#2a3a30",ROW:"#dadad8"} },
+  { id:"cz-04-forest", family:"chernobyl", name:"04 · КРАСНЫЙ ЛЕС RED FOREST", feel:"Pine forest dead from radiation, needles oxidized to copper-red.", slots:{BODY:"#e8b098",PANEL:"#f4c4ac",INK:"#3a0a08",BRAND:"#e8c818",ACT:"#1a8ad8",OK:"#5aa818",ROW:"#dc987c"} },
+  { id:"cz-05-cherenkov", family:"chernobyl", name:"05 · CHERENKOV", feel:"Underwater reactor glow, particles exceeding light speed in water. Bold body.", slots:{BODY:"#1a8ad8",PANEL:"#2a9ae8",INK:"#f0f8fc",BRAND:"#e8c818",ACT:"#0a0a0c",OK:"#5aa818",ROW:"#0a6abc"} },
+  { id:"cz-06-polyn", family:"chernobyl", name:"06 · ПОЛЫНЬ POLYN'", feel:"Wormwood/sage growing in the exclusion zone. The plant whose name became Chernobyl.", slots:{BODY:"#dce0d0",PANEL:"#e8ecdc",INK:"#1a2018",BRAND:"#e8c818",ACT:"#1a8ad8",OK:"#5aa818",ROW:"#c8ccba"} },
+  { id:"cz-07-geiger", family:"chernobyl", name:"07 · GEIGER", feel:"Soviet dosimeter LCD, geiger counter alert. Acid synthetic green.", slots:{BODY:"#c8e858",PANEL:"#d8f068",INK:"#1a2808",BRAND:"#0a0a0c",ACT:"#c81818",OK:"#1a2808",ROW:"#a8c838"} },
+  { id:"cz-08-hazmat", family:"chernobyl", name:"08 · HAZMAT", feel:"Trefoil radiation sign, exclusion zone tape. Boldest yellow in library.", slots:{BODY:"#f0c818",PANEL:"#fcd428",INK:"#0a0a0c",BRAND:"#0a0a0c",ACT:"#c81818",OK:"#0a0a0c",ROW:"#d8b008"} },
+  { id:"cz-09-sarcofag", family:"chernobyl", name:"09 · САРКОФАГ SARCOFAG", feel:"1986 Sarcophagus, 2016 New Safe Confinement. Concrete-tan grey.", slots:{BODY:"#d4d0c4",PANEL:"#e0dcd0",INK:"#1a1812",BRAND:"#e8c818",ACT:"#1a8ad8",OK:"#5aa818",ROW:"#bcb8ac"} },
+  { id:"cz-10-reaktor", family:"chernobyl", name:"10 · РЕАКТОР 4 REAKTOR 4 [DARK role]", feel:"Exclusion zone night, dosimeter LCD ink, Cherenkov reactor glow accent.", slots:{BODY:"#06080a",PANEL:"#0c1014",INK:"#c8e858",BRAND:"#f0c818",ACT:"#1a8ad8",OK:"#d82828",ROW:"#101418"} },
+  // INDIA · TRIBAL
+  { id:"tr-01-warli", family:"india-tribal", name:"01 · वारली WARLI", feel:"Maharashtra Adivasi · Sahyadri hills · two-color discipline", slots:{BODY:"#b8987a",PANEL:"#c8a88a",INK:"#f4f0e8",BRAND:"#f4f0e8",ACT:"#2a1808",OK:"#f4f0e8",ROW:"#a4866a"} },
+  { id:"tr-02-dhokra", family:"india-tribal", name:"02 · ढोकरा DHOKRA", feel:"Chhattisgarh Bastar · bell-metal lost-wax casting · 4500 years", slots:{BODY:"#b88c5c",PANEL:"#c89c6c",INK:"#1a0e08",BRAND:"#a8281a",ACT:"#2a4830",OK:"#5a4a1a",ROW:"#a47c4c"} },
+  { id:"tr-03-gond", family:"india-tribal", name:"03 · गोंड GOND", feel:"Madhya Pradesh Pardhan Gond · Jangarh Singh Shyam (1962-2001)", slots:{BODY:"#1a3a78",PANEL:"#2a4a88",INK:"#f4f0e8",BRAND:"#d8281a",ACT:"#f0c820",OK:"#2a8a4a",ROW:"#0a2860"} },
+  { id:"tr-04-bhil", family:"india-tribal", name:"04 · भील BHIL", feel:"MP/Rajasthan Bhil · India's largest tribe by population · Bhuri Bai's Padma Shri", slots:{BODY:"#f0c878",PANEL:"#f8d488",INK:"#1a0a08",BRAND:"#a8281a",ACT:"#1a0a08",OK:"#f4ecd8",ROW:"#e0b860"} },
+  { id:"tr-05-pithora", family:"india-tribal", name:"05 · पिठोरा PITHORA", feel:"Gujarat Rathwa · ritual horse paintings · marriage and harvest vows", slots:{BODY:"#f8f4ec",PANEL:"#fdfaf2",INK:"#1a0a08",BRAND:"#d8281a",ACT:"#1a3a78",OK:"#f0c820",ROW:"#ece8d8"} },
+  { id:"tr-06-kondh", family:"india-tribal", name:"06 · ଡଙ୍ଗରିଆ DONGRIA KONDH", feel:"Odisha Niyamgiri · Vedanta court victory 2013 · three-color shawl", slots:{BODY:"#c01818",PANEL:"#d02828",INK:"#f0c820",BRAND:"#f0c820",ACT:"#0a0a0a",OK:"#f0c820",ROW:"#a01010"} },
+  { id:"tr-07-khovar", family:"india-tribal", name:"07 · खोवर KHOVAR", feel:"Jharkhand Santhal · wedding wall painting · women painters only", slots:{BODY:"#b8483a",PANEL:"#c85848",INK:"#f4ecd8",BRAND:"#f4ecd8",ACT:"#1a0a08",OK:"#f4ecd8",ROW:"#a03828"} },
+  { id:"tr-08-banjara", family:"india-tribal", name:"08 · बंजारा BANJARA", feel:"Nomadic Lambadi · mirror-work + cowrie shells · Rajasthan to Karnataka", slots:{BODY:"#d8281a",PANEL:"#e83828",INK:"#f4ecd8",BRAND:"#f0c820",ACT:"#1a3a78",OK:"#2a8a4a",ROW:"#b81810"} },
+  { id:"tr-09-naga", family:"india-tribal", name:"09 · नागा NAGA", feel:"Northeast Konyak/Ao/Angami · status-marker shawl · headhunter lineage", slots:{BODY:"#f8f4ec",PANEL:"#fdfaf2",INK:"#0a0a08",BRAND:"#c01818",ACT:"#0a0a08",OK:"#c01818",ROW:"#e8c8c8"} },
+  { id:"tr-10-mising", family:"india-tribal", name:"10 · মিচিং MISING", feel:"Assam Brahmaputra · backstrap loom + muga gold silk · star-pattern weave", slots:{BODY:"#d8b860",PANEL:"#e8c870",INK:"#2a1808",BRAND:"#c01818",ACT:"#1a0a08",OK:"#f4ecd8",ROW:"#c8a850"} },
+  { id:"tr-11-apatani", family:"india-tribal", name:"11 · आपातानी APATANI", feel:"Arunachal Ziro Valley · indigo-on-cream weave · tattooed foremothers", slots:{BODY:"#b8c8d4",PANEL:"#c8d4dc",INK:"#0a1828",BRAND:"#a8281a",ACT:"#1a0a08",OK:"#f4ecd8",ROW:"#a4b4c0"} },
+  { id:"tr-12-khasi", family:"india-tribal", name:"12 · ka JAINSEM (KHASI)", feel:"Meghalaya · matrilineal society · maroon mulberry silk + gold thread", slots:{BODY:"#682028",PANEL:"#783038",INK:"#f0c820",BRAND:"#f0c820",ACT:"#f4ecd8",OK:"#f0c820",ROW:"#581820"} },
+  { id:"tr-13-puanchei", family:"india-tribal", name:"13 · MIZO PUANCHEI", feel:"Mizoram · 6-color stripe discipline · Cheraw bamboo dance", slots:{BODY:"#f4ecd8",PANEL:"#fdf6e2",INK:"#1a0a08",BRAND:"#c01818",ACT:"#1a3a78",OK:"#f0c820",ROW:"#2a8a4a"} },
+  { id:"tr-14-bodo", family:"india-tribal", name:"14 · डोकोना BODO", feel:"Assam plains · cotton dokhona wraparound · 8th-schedule recognition 2003", slots:{BODY:"#ecd470",PANEL:"#f4dc80",INK:"#1a0a08",BRAND:"#c01818",ACT:"#2a8a4a",OK:"#1a3a78",ROW:"#dcc060"} },
+  { id:"tr-15-bishnoi", family:"india-tribal", name:"15 · बिश्नोई BISHNOI", feel:"Rajasthan Marwar · Khejarli 1730 · 363 environmental martyrs", slots:{BODY:"#f8f8f4",PANEL:"#ffffff",INK:"#1a1a18",BRAND:"#a8281a",ACT:"#2a4830",OK:"#5a6a2a",ROW:"#ecece8"} },
+  // INDIA · SAREES
+  { id:"sr-01-banarasi", family:"india-sarees", name:"01 · BANARASI", feel:"Varanasi · Mughal brocade · Ansari weavers · the wedding silk", slots:{BODY:"#6a1828",PANEL:"#7a2438",INK:"#d8b04a",BRAND:"#d8b04a",ACT:"#1a3a78",OK:"#1a5a3a",ROW:"#581820"} },
+  { id:"sr-02-kanchipuram", family:"india-sarees", name:"02 · காஞ்சிபுரம் KANCHIPURAM", feel:"Tamil Nadu temple town · 3-thread silk · daughter to granddaughter", slots:{BODY:"#b81848",PANEL:"#c82858",INK:"#d8b04a",BRAND:"#d8b04a",ACT:"#1a5a3a",OK:"#1a3a78",ROW:"#a01040"} },
+  { id:"sr-03-patola", family:"india-sarees", name:"03 · પટોળા PATOLA", feel:"Gujarat Patan · double ikat · 6 months per saree · 3 surviving families", slots:{BODY:"#c8341a",PANEL:"#d8442a",INK:"#f4ecd8",BRAND:"#f0c820",ACT:"#1a5a3a",OK:"#0a0a08",ROW:"#a82418"} },
+  { id:"sr-04-bandhani", family:"india-sarees", name:"04 · બાંધણી BANDHANI", feel:"Gujarat / Rajasthan · 15,000 knots · Navratri garba", slots:{BODY:"#d8281a",PANEL:"#e83828",INK:"#f4ecd8",BRAND:"#f4ecd8",ACT:"#f0c820",OK:"#d8b04a",ROW:"#b81810"} },
+  { id:"sr-05-paithani", family:"india-sarees", name:"05 · पैठणी PAITHANI", feel:"Maharashtra Aurangabad · peacock pallu · empress Yesubai", slots:{BODY:"#1a5a3a",PANEL:"#2a6a4a",INK:"#d8b04a",BRAND:"#d8b04a",ACT:"#b81848",OK:"#1a3a78",ROW:"#0a4a28"} },
+  { id:"sr-06-jamdani", family:"india-sarees", name:"06 · জামদানি JAMDANI", feel:"Bengal Dhaka · woven air · UNESCO intangible heritage", slots:{BODY:"#f0e8d4",PANEL:"#faf2de",INK:"#2a1a08",BRAND:"#d8b04a",ACT:"#b81848",OK:"#1a3a78",ROW:"#e4dcc4"} },
+  { id:"sr-07-sambalpuri", family:"india-sarees", name:"07 · ସମ୍ବଲପୁରୀ SAMBALPURI", feel:"Odisha · ikat with conch + wheel + flower symbols · Indira Gandhi 1970s", slots:{BODY:"#682028",PANEL:"#783038",INK:"#d8b04a",BRAND:"#d8b04a",ACT:"#f4ecd8",OK:"#1a3a78",ROW:"#581820"} },
+  { id:"sr-08-chanderi", family:"india-sarees", name:"08 · चंदेरी CHANDERI", feel:"MP · sheer cotton-silk · 13:1 ratio · Mughal summer court", slots:{BODY:"#f4e4c0",PANEL:"#fcedd0",INK:"#2a1a08",BRAND:"#d8b04a",ACT:"#b81848",OK:"#1a5a3a",ROW:"#e8d8b0"} },
+  { id:"sr-09-muga", family:"india-sarees", name:"09 · মুগা MUGA", feel:"Assam · the only naturally golden silk on earth · GI-locked", slots:{BODY:"#d8b04a",PANEL:"#e8c050",INK:"#2a1a08",BRAND:"#b81818",ACT:"#1a3a78",OK:"#f4ecd8",ROW:"#c8a040"} },
+  { id:"sr-10-phulkari", family:"india-sarees", name:"10 · ਫੁਲਕਾਰੀ PHULKARI", feel:"Punjab · phul + kari = flower-work · the Bagh garden weave", slots:{BODY:"#c81848",PANEL:"#d82858",INK:"#f0c820",BRAND:"#f0c820",ACT:"#2a8a4a",OK:"#d8b04a",ROW:"#a81038"} },
+  { id:"sr-11-maheshwari", family:"india-sarees", name:"11 · MAHESHWARI", feel:"MP Narmada · Rani Ahilyabai Holkar · reversible weave", slots:{BODY:"#f0e0c0",PANEL:"#f8e8d0",INK:"#2a1a08",BRAND:"#d8b04a",ACT:"#682028",OK:"#1a5a3a",ROW:"#e4d2a8"} },
+  { id:"sr-12-pochampally", family:"india-sarees", name:"12 · POCHAMPALLY", feel:"Telangana · Bhoodan land-gift movement 1951 · UNESCO 2010", slots:{BODY:"#a01828",PANEL:"#b02838",INK:"#f4ecd8",BRAND:"#d8b04a",ACT:"#1a0a08",OK:"#1a5a3a",ROW:"#801020"} },
+  { id:"sr-13-baluchari", family:"india-sarees", name:"13 · বালুচরী BALUCHARI", feel:"Bengal Murshidabad · narrative pallu · the only story-saree on earth", slots:{BODY:"#4a1828",PANEL:"#5a2438",INK:"#d8b04a",BRAND:"#d8b04a",ACT:"#f4ecd8",OK:"#b81848",ROW:"#3a1020"} },
+  { id:"sr-14-kalamkari", family:"india-sarees", name:"14 · కలంకారి KALAMKARI", feel:"Andhra Srikalahasti / Machilipatnam · natural pigments only · weeks per saree", slots:{BODY:"#f0e4c8",PANEL:"#f8edd2",INK:"#2a1208",BRAND:"#b81818",ACT:"#1a3a78",OK:"#5a4a1a",ROW:"#e4d4b0"} },
+  { id:"sr-15-ilkal", family:"india-sarees", name:"15 · ಇಲ್ಕಲ್ ILKAL", feel:"Karnataka Bagalkot · Tope Teni weave · 800 years · cotton body, silk pallu", slots:{BODY:"#b8302a",PANEL:"#c8403a",INK:"#d8b04a",BRAND:"#d8b04a",ACT:"#1a5a3a",OK:"#f4ecd8",ROW:"#982018"} },
+];
+
+// -----------------------------------------------------------------------------
+// 2. FAMILY_LABELS
+// -----------------------------------------------------------------------------
+const FAMILY_LABELS = {
+  "japan": "Japan 日本",
+  "china": "China 中国",
+  "india-north": "India · North",
+  "india-west": "India · West",
+  "kashmir": "Kashmir",
+  "india-east": "India · East",
+  "india-south": "India · South",
+  "mexico": "Mexico",
+  "morocco": "Morocco",
+  "iran": "Iran",
+  "scandinavia": "Scandinavia",
+  "west-africa": "West Africa",
+  "italy": "Italy",
+  "russia": "Russia",
+  "bauhaus": "Bauhaus",
+  "brutalism": "Brutalism",
+  "memphis": "Memphis",
+  "cyberpunk": "Cyberpunk",
+  "vaporwave": "Vaporwave",
+  "chernobyl": "Chernobyl",
+  "india-tribal": "India · Tribal",
+  "india-sarees": "India · Sarees",
+};
+
+// -----------------------------------------------------------------------------
+// 3. TYPOGRAPHIES
+// -----------------------------------------------------------------------------
+// Each layout reads three CSS variables:
+//   --kg-display  — headlines
+//   --kg-body     — running text
+//   --kg-mono     — code / tabular
+// No webfonts. No external requests. System and web-safe only.
+const TYPOGRAPHIES = [
+  {
+    id: "system",
+    name: "System",
+    sub: "Modern, neutral, looks like the OS.",
+    display: "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    body:    "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    mono:    "ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
+  },
+  {
+    id: "editorial",
+    name: "Editorial",
+    sub: "Magazine-feature standard.",
+    display: "Georgia, 'Iowan Old Style', 'Times New Roman', serif",
+    body:    "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    mono:    "ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
+  },
+  {
+    id: "classical",
+    name: "Classical",
+    sub: "Book-like, formal, long-form reading.",
+    display: "Palatino, 'Palatino Linotype', 'Iowan Old Style', Georgia, serif",
+    body:    "Palatino, 'Palatino Linotype', 'Iowan Old Style', Georgia, serif",
+    mono:    "ui-monospace, Menlo, Consolas, monospace",
+  },
+  {
+    id: "humanist",
+    name: "Humanist",
+    sub: "Warm sans, less corporate.",
+    display: "Optima, 'Trebuchet MS', 'Lucida Sans', sans-serif",
+    body:    "Optima, 'Trebuchet MS', 'Lucida Sans', sans-serif",
+    mono:    "ui-monospace, Menlo, Consolas, monospace",
+  },
+  {
+    id: "geometric",
+    name: "Geometric",
+    sub: "Cool, designer, the Swiss school.",
+    display: "Helvetica, 'Helvetica Neue', Arial, sans-serif",
+    body:    "Helvetica, 'Helvetica Neue', Arial, sans-serif",
+    mono:    "ui-monospace, Menlo, Consolas, monospace",
+  },
+  {
+    id: "typewriter",
+    name: "Typewriter",
+    sub: "Mono throughout. Letter and Terminal sing here.",
+    display: "'Courier New', Courier, ui-monospace, monospace",
+    body:    "'Courier New', Courier, ui-monospace, monospace",
+    mono:    "'Courier New', Courier, ui-monospace, monospace",
+  },
+  {
+    id: "didone",
+    name: "Didone",
+    sub: "High-contrast drama. Marquee, Poster, fashion.",
+    display: "Didot, 'Bodoni 72', 'Bodoni MT', Georgia, serif",
+    body:    "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    mono:    "ui-monospace, Menlo, Consolas, monospace",
+  },
+  {
+    id: "oldstyle",
+    name: "Old-style",
+    sub: "Scholarly, slow read, oldworld serif.",
+    display: "'Hoefler Text', 'Big Caslon', Garamond, 'EB Garamond', Georgia, serif",
+    body:    "'Hoefler Text', 'Big Caslon', Garamond, 'EB Garamond', Georgia, serif",
+    mono:    "ui-monospace, Menlo, Consolas, monospace",
+  },
+];
+
+// -----------------------------------------------------------------------------
+// 4. LAYOUT_STORIES
+// -----------------------------------------------------------------------------
+const LAYOUT_STORIES = {
+  monolith: "<p>For the person with one thing to say. A writer between books, a designer between projects, someone announcing a sabbatical or a launch. The page <em>is</em> the statement — nothing else competes with it.</p><p>Big type carries authority. Best paired with the cleanest palettes (MUJI, BAIZI, CHUNA) to let the words breathe, or with the most severe (SUMI, KAJAL, KARI) when the authority needs gravity.</p>",
+
+  atelier: "<p>For the maker who wants identity and output visible together. The two-column structure lets you say who you are while showing what you've made, in the same eyeful.</p><p>The editorial typography signals 'I am a craftsperson, this is my workshop.' Best for architects, designers, small studios, anyone whose practice is the brand.</p>",
+
+  index: "<p>For the prolific. The site is a list of things you've made or written, and the structure stays out of the way. Inspired by Simon Willison's blog, by 90s academic homepages, by anyone whose value is the volume and quality of their archive.</p><p>Sparse decoration on purpose — the work IS the design.</p>",
+
+  card: "<p>For the creator whose site is a router. Musicians, podcasters, influencers, anyone whose visitors arrive looking to be sent somewhere else. Mobile-first, vertically stacked, big tap targets.</p><p>The taste comes from pairing the linktree pattern with a real palette and real typography instead of generic SaaS chrome.</p>",
+
+  salon: "<p>For the public figure who needs the full set: a proper homepage, navigation, multiple sections, a real 'house on the internet'. Conservative structure on purpose — it's the layout that doesn't surprise visitors.</p><p>Best for academics, public intellectuals, founders, anyone whose audience expects a conventional personal site.</p>",
+
+  split: "<p>For the visual professional. The image side shows the work — a portfolio shot, a self-portrait, a piece of identity. The text side carries the words.</p><p>The 50/50 split refuses to let either dominate, which is the point: visual people whose words also matter. Photographers, designers, illustrators, art directors.</p>",
+
+  marquee: "<p>For the person whose site is itself a piece of design. Type-as-art. The name fills the page because the page <em>is</em> the brand.</p><p>Best for designers and design-adjacent professionals who want their site to demonstrate, not describe, their taste. Pairs hardest with the boldest palettes — HALDI, ZHUSHA, KAALI.</p>",
+
+  tile: "<p>For visual portfolios where the work is image-based. Inspired by Instagram grids, contact sheets, gallery wall arrangements.</p><p>The grid is unforgiving — every tile competes with every other — which forces curation. Best for photographers, illustrators, designers with a body of visual work. When images are missing, the tiles fall back to palette colors so empty states look composed on purpose.</p>",
+
+  dossier: "<p>For the formal context. Looks like a printed CV or a gallery handout. The user is signaling 'I am serious, I want to be evaluated on substance.'</p><p>Best for academics, consultants, lawyers, anyone whose professional context expects a document-shaped artifact.</p>",
+
+  terminal: "<p>For developers, hackers, sysadmins, anyone whose identity is wrapped up in the command line. In dark palettes (URUSHI, QIQI, KAALI) it reads as a real terminal session. In light palettes (KINARI, KHADI) it reads as a typewritten code listing.</p><p>Either way, the message is 'I am of the machine.'</p>",
+
+  frame: "<p>For the artist with a single piece to present. The matted border treats the content like a print on a wall — bordered, framed, presented.</p><p>Best when there's exactly one thing to show: an announcement, a project launch, a personal statement, a gallery opening.</p>",
+
+  letter: "<p>For intimacy. Writers, essayists, anyone whose relationship with their visitors is personal rather than professional.</p><p>The format borrows from physical correspondence — date, salutation, body, signature — to make a website feel like an actual address from one person to another. Pairs naturally with the warmer palettes (KINARI, KHADI, MIZHI, CHANDANA).</p>",
+
+  newspaper: "<p>For journalists, editors, publishers, anyone whose work is editorial in shape. The masthead carries authority; the column grid implies a publication, not a person.</p><p>Best when you want the site to feel like an institution you edit, even if the institution is just you.</p>",
+
+  poster: "<p>For musicians, event organizers, performers, gig promoters. The hierarchy mirrors a printed gig poster: enormous name, list of dates or projects, dotted leader lines.</p><p>The user is announcing themselves as a presence with shows to attend, even if the 'shows' are projects.</p>",
+
+  manifesto: "<p>For the opinionated. Founders explaining their thesis, activists making a case, writers staking ground. The long-form single page treats the visitor as someone who came to read, not browse.</p><p>The pull quote breaks the wall of text and lets you front-load the most quotable line. Pairs with the serious palettes (SUMI, KAJAL, KARI, NEEL).</p>",
+};
+
+// -----------------------------------------------------------------------------
+// 5. COMBINATIONS
+// -----------------------------------------------------------------------------
+// Curated (layout × palette × typography) starting points.
+// Picking a combination snaps all three axes. User iterates from there.
+const COMBINATIONS = [
+  // The original 15
+  { name: "Pamphleteer",  sub: "Long-form opinion. 1968 paperback.",     layout: "manifesto", palette: "in1-03-kajal",  typography: "classical"  },
+  { name: "Correspondent",sub: "Typewritten letter on aged paper.",      layout: "letter",    palette: "jp-02-kinari",  typography: "typewriter" },
+  { name: "Couturier",    sub: "Fashion magazine cover.",                layout: "marquee",   palette: "cn-08-zhusha",  typography: "didone"     },
+  { name: "Hacker",       sub: "Terminal in lacquerware red.",           layout: "terminal",  palette: "jp-10-urushi",  typography: "typewriter" },
+  { name: "Editor",       sub: "New Yorker editorial.",                  layout: "atelier",   palette: "cn-02-mizhi",   typography: "editorial"  },
+  { name: "Journalist",   sub: "19th-century broadsheet.",               layout: "newspaper", palette: "cn-01-baizi",   typography: "oldstyle"   },
+  { name: "Linker",       sub: "Helvetica linktree on indigo.",          layout: "card",      palette: "in1-06-neel",   typography: "geometric"  },
+  { name: "Curator",      sub: "Optima on celadon. Museum label.",       layout: "index",     palette: "cn-06-qingci",  typography: "humanist"   },
+  { name: "Architect",    sub: "Single statement, severe.",              layout: "monolith",  palette: "jp-03-sumi",    typography: "system"     },
+  { name: "Scholar",      sub: "CV on undyed khadi cotton.",             layout: "dossier",   palette: "in1-02-khadi",  typography: "oldstyle"   },
+  { name: "Gallerist",    sub: "Print matted on jet black.",             layout: "frame",     palette: "ins-10-night",  typography: "didone"     },
+  { name: "Promoter",     sub: "Mustard concert poster, Swiss style.",   layout: "poster",    palette: "in1-05-haldi",  typography: "geometric"  },
+  { name: "Photographer", sub: "Magenta contact sheet.",                 layout: "tile",      palette: "sr-02-kanchipuram", typography: "system" },
+  { name: "Designer",     sub: "Backwater portfolio, paddy green.",      layout: "split",     palette: "ine-11-sangai",  typography: "editorial" },
+  { name: "Professor",    sub: "Public intellectual, sky-blue formal.",  layout: "salon",     palette: "in1-08-aakash", typography: "classical"  },
+
+  // Cyberpunk / digital
+  { name: "Replicant",    sub: "Blade Runner 1982. Neon and rain.",      layout: "terminal",  palette: "cy-01-runner",  typography: "typewriter" },
+  { name: "Netrunner",    sub: "Cyberdeck noir. Pure dark.",             layout: "terminal",  palette: "cy-15-dark",    typography: "typewriter" },
+  { name: "Akira",        sub: "Neo-Tokyo poster red.",                  layout: "marquee",   palette: "cy-03-red",     typography: "didone"     },
+  { name: "Matrix",       sub: "Green-on-black, falling code.",          layout: "terminal",  palette: "cy-05-green",   typography: "typewriter" },
+
+  // Vaporwave / synthwave
+  { name: "Synthwave",    sub: "Miami 1984. Hot magenta sunset.",        layout: "marquee",   palette: "vw-08-miami",   typography: "didone"     },
+  { name: "Floral Shoppe",sub: "Vaporwave statue, lavender dusk.",       layout: "split",     palette: "vw-05-dusk",    typography: "geometric"  },
+
+  // Bauhaus / modernist
+  { name: "Bauhaus",      sub: "Kandinsky blue. Geometric purity.",      layout: "monolith",  palette: "bh-03-blue",    typography: "geometric"  },
+  { name: "Klee",         sub: "Bauhaus warm, painterly.",               layout: "atelier",   palette: "bh-06-klee",    typography: "geometric"  },
+  { name: "Memphis",      sub: "1980s Milan pop. Hot pink riot.",        layout: "tile",      palette: "mp-08-pink",    typography: "geometric"  },
+
+  // Brutalism
+  { name: "Brutalist",    sub: "Raw concrete. No apology.",              layout: "dossier",   palette: "br-01-brut",    typography: "system"     },
+  { name: "Barbican",     sub: "London concrete estate at dawn.",        layout: "monolith",  palette: "br-04-barbican",typography: "geometric"  },
+
+  // Italy
+  { name: "Tuscan",       sub: "Siena ochre. Editorial warmth.",         layout: "atelier",   palette: "it-05-siena",   typography: "classical"  },
+  { name: "Pompeiano",    sub: "Pompeii red. Roman fresco.",             layout: "manifesto", palette: "it-04-pompeiano",typography:"oldstyle"   },
+  { name: "Espresso",     sub: "Italian café noir.",                     layout: "letter",    palette: "it-09-espresso",typography: "editorial"  },
+  { name: "Lapis",        sub: "Florentine lapis lazuli illumination.",  layout: "frame",     palette: "it-07-lapislazzuli",typography:"oldstyle"},
+
+  // Persia / Iran
+  { name: "Lajvard",      sub: "Persian lapis. Miniature manuscript.",   layout: "frame",     palette: "ir-07-lajvard", typography: "oldstyle"   },
+  { name: "Pesteh",       sub: "Pistachio green, garden of poets.",      layout: "salon",     palette: "ir-05-pesteh",  typography: "classical"  },
+
+  // Morocco
+  { name: "Chefchaouen",  sub: "Blue mountain village.",                 layout: "card",      palette: "ma-07-chefchaouen",typography: "humanist"},
+  { name: "Marrakech",    sub: "Souk red, spice market.",                layout: "poster",    palette: "ma-04-marrakech",typography: "didone"    },
+  { name: "Sahara",       sub: "Desert dune. Sun-bleached.",             layout: "split",     palette: "ma-02-sahara",  typography: "humanist"   },
+
+  // Scandinavia
+  { name: "Snö",          sub: "Nordic snow. Cold minimal.",             layout: "monolith",  palette: "sc-01-sn",      typography: "system"     },
+  { name: "Falu",         sub: "Swedish barn red, hand-painted.",        layout: "letter",    palette: "sc-04-falu",    typography: "typewriter" },
+  { name: "Aurora",       sub: "Northern lights, polar formal.",         layout: "salon",     palette: "sc-07-aurora",  typography: "classical"  },
+
+  // Russia
+  { name: "Petersburg",   sub: "Imperial broadsheet, Cyrillic.",         layout: "newspaper", palette: "ru-03-peterburg",typography: "oldstyle"  },
+  { name: "Gzhel",        sub: "Russian blue porcelain.",                layout: "frame",     palette: "ru-04-gzhel",   typography: "classical"  },
+  { name: "Khokhloma",    sub: "Folk lacquer, gold and red.",            layout: "tile",      palette: "ru-05-khokhloma",typography: "didone"    },
+
+  // Mexico
+  { name: "Casa Azul",    sub: "Frida cobalt courtyard.",                layout: "split",     palette: "mx-09-azul",    typography: "editorial"  },
+  { name: "Buganvilia",   sub: "Mexican magenta wall.",                  layout: "atelier",   palette: "mx-04-buganvilia",typography:"editorial"  },
+  { name: "Día de Muertos",sub: "Marigold and obsidian night.",          layout: "marquee",   palette: "mx-10-muertos", typography: "didone"     },
+
+  // West Africa
+  { name: "Kente",        sub: "Ashanti gold and indigo grid.",          layout: "tile",      palette: "waf-05-kente",  typography: "geometric"  },
+  { name: "Baobab",       sub: "Sahel sunbleached calm.",                layout: "monolith",  palette: "waf-01-baobab", typography: "humanist"   },
+  { name: "Adire",        sub: "Yoruba indigo resist-dye.",              layout: "frame",     palette: "waf-04-re",     typography: "system"     },
+
+  // Chernobyl / decay
+  { name: "Pripyat",      sub: "Atomgrad ghost town archive.",           layout: "index",     palette: "cz-02-pripyat", typography: "system"     },
+  { name: "Reaktor",      sub: "Sarcophagus, geiger green.",             layout: "terminal",  palette: "cz-10-reaktor", typography: "typewriter" },
+
+  // India regional additions
+  { name: "Tagore",       sub: "Bengal whitewash, classical formal.",    layout: "letter",    palette: "ine-01-whitewash",typography:"classical"  },
+  { name: "Madurai",      sub: "Meenakshi temple, devotional reds.",     layout: "marquee",   palette: "ins-05-meenakshi",typography:"didone"     },
+  { name: "Pondicherry",  sub: "French quarter, mustard shutters.",      layout: "atelier",   palette: "ins-06-pondicherry",typography:"editorial"},
+  { name: "Hampi",        sub: "Vijayanagara granite ruins.",            layout: "dossier",   palette: "ins-03-granite",typography: "oldstyle"   },
+  { name: "Pashmina",     sub: "Kashmir wool, slow formal.",             layout: "salon",     palette: "ksh-01-pashmina",typography: "classical" },
+  { name: "Pol",          sub: "Ahmedabad heritage haveli warmth.",      layout: "atelier",   palette: "inw-02-pol",    typography: "editorial"  },
+  { name: "Warli",        sub: "Tribal earth and white pigment.",        layout: "index",     palette: "tr-01-warli",   typography: "system"     },
+  { name: "Banarasi",     sub: "Brocade poster, gold on burgundy.",      layout: "poster",    palette: "sr-01-banarasi",typography: "didone"     },
+];
+
+// -----------------------------------------------------------------------------
+// 6. SLOT_DEFS — the locked slot vocabulary
+// -----------------------------------------------------------------------------
+// Canonical per specs/slot-vocabulary.md. Layouts read from this vocabulary;
+// they do not invent their own slot names. Phase 3 LLM generates by filling
+// these slots. The .kagaz file stores values keyed by these names.
+const SLOT_DEFS = {
+  // Site-level slots — available on every page
+  site: [
+    { name: "site_name",        type: "text",     required: true },
+    { name: "site_tagline",     type: "text" },
+    { name: "site_avatar",      type: "image" },
+    { name: "site_footer_text", type: "text" },
+    { name: "site_social",      type: "links" },
+  ],
+  // Per-page slots, keyed by page id
+  pages: {
+    home: [
+      { name: "home_headline", type: "text" },
+      { name: "home_sub",      type: "text" },
+      { name: "home_intro",    type: "longtext" },
+      { name: "home_image",    type: "image" },
+      { name: "home_cta",      type: "links" },
+    ],
+    about: [
+      { name: "about_headline", type: "text" },
+      { name: "about_body",     type: "longtext" },
+      { name: "about_image",    type: "image" },
+      { name: "about_facts",    type: "list", item: [
+        { name: "label", type: "text" },
+        { name: "value", type: "text" },
+      ]},
+    ],
+    work: [
+      { name: "work_headline", type: "text" },
+      { name: "work_intro",    type: "longtext" },
+      { name: "work_items",    type: "list", item: [
+        { name: "title",       type: "text" },
+        { name: "description", type: "text" },
+        { name: "url",         type: "text" },
+        { name: "image",       type: "image", optional: true },
+      ]},
+    ],
+    writing: [
+      { name: "writing_headline", type: "text" },
+      { name: "writing_intro",    type: "longtext" },
+      { name: "writing_items",    type: "list", item: [
+        { name: "title",       type: "text" },
+        { name: "description", type: "text" },
+        { name: "url",         type: "text" },
+        { name: "date",        type: "text", optional: true },
+      ]},
+    ],
+    links: [
+      { name: "links_headline", type: "text" },
+      { name: "links_intro",    type: "longtext" },
+      { name: "links_list",     type: "links" },
+    ],
+    gallery: [
+      { name: "gallery_headline", type: "text" },
+      { name: "gallery_intro",    type: "longtext" },
+      { name: "gallery_items",    type: "list", item: [
+        { name: "image",   type: "image" },
+        { name: "caption", type: "text", optional: true },
+      ]},
+    ],
+    contact: [
+      { name: "contact_headline", type: "text" },
+      { name: "contact_body",     type: "longtext" },
+      { name: "contact_methods",  type: "list", item: [
+        { name: "label", type: "text" },
+        { name: "value", type: "text" },
+        { name: "url",   type: "text", optional: true },
+      ]},
+      { name: "contact_social",   type: "links" },
+    ],
+  },
+  // Which pages each layout supports (per spec §6 "Pages supported" table)
+  layoutPages: {
+    monolith:  ["home"],
+    atelier:   ["home", "about", "work"],
+    index:     ["home", "writing", "work"],
+    card:      ["links"],
+    salon:     ["home", "about", "work", "writing", "gallery", "contact"],
+    split:     ["home"],
+    marquee:   ["home"],
+    tile:      ["home", "work"],
+    dossier:   ["home", "about", "work", "writing"],
+    terminal:  ["home", "about", "work", "writing"],
+    frame:     ["home"],
+    letter:    ["home"],
+    newspaper: ["home", "work", "writing"],
+    poster:    ["home", "work"],
+    manifesto: ["home"],
+  },
+  // URL → icon id auto-detect (per slot-vocabulary.md §Icon set)
+  iconPatterns: [
+    { id: "instagram", patterns: ["instagram.com"] },
+    { id: "youtube",   patterns: ["youtube.com", "youtu.be"] },
+    { id: "x",         patterns: ["x.com", "twitter.com"] },
+    { id: "linkedin",  patterns: ["linkedin.com"] },
+    { id: "tiktok",    patterns: ["tiktok.com"] },
+    { id: "github",    patterns: ["github.com"] },
+    { id: "facebook",  patterns: ["facebook.com", "fb.com"] },
+    { id: "whatsapp",  patterns: ["wa.me", "whatsapp.com"] },
+    { id: "telegram",  patterns: ["t.me", "telegram.org"] },
+    { id: "pinterest", patterns: ["pinterest.com"] },
+    { id: "email",     patterns: ["mailto:"] },
+    // link = fallback; writing + gallery are context-assigned, not URL-detected
+  ],
+  // 5-page cap from spec §13
+  maxPages: 5,
+};
+
+// -----------------------------------------------------------------------------
+// 7. ICONS
+// -----------------------------------------------------------------------------
+// 14 inline SVGs. Layouts that render icons read ICONS[linkItem.icon].
+// Auto-detected from URL via detectIcon(url). Manual override in link editor.
+// 14 inline SVGs, 24x24 viewBox, currentColor fill/stroke — no external requests.
+// TODO(polish): these are legible geometric placeholders. Swap for brand-accurate
+// glyphs before shipping. Every icon must remain a single <svg> returning a
+// recognizable mark at 16–24px.
+const ICONS = {
+  instagram: '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/></svg>',
+  youtube:   '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path d="M23 7.5c-.2-1.4-1.1-2.4-2.4-2.6C18.3 4.5 12 4.5 12 4.5s-6.3 0-8.6.4C2.1 5.1 1.2 6.1 1 7.5.6 9.8.6 12 .6 12s0 2.2.4 4.5c.2 1.4 1.1 2.4 2.4 2.6 2.3.4 8.6.4 8.6.4s6.3 0 8.6-.4c1.3-.2 2.2-1.2 2.4-2.6.4-2.3.4-4.5.4-4.5s0-2.2-.4-4.5zM9.7 15.5V8.5L15.7 12l-6 3.5z"/></svg>',
+  x:         '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path d="M18.9 2H22l-7.1 8.1L23 22h-6.5l-5.1-6.7L5.6 22H2.5l7.6-8.7L2 2h6.7l4.6 6.1L18.9 2zm-1.1 18.2h1.8L7.3 3.7H5.4l12.4 16.5z"/></svg>',
+  linkedin:  '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path d="M20 3H4c-.6 0-1 .4-1 1v16c0 .6.4 1 1 1h16c.6 0 1-.4 1-1V4c0-.6-.4-1-1-1zM8.3 18.3H5.7V10h2.6v8.3zM7 8.8c-.8 0-1.5-.7-1.5-1.5S6.2 5.8 7 5.8s1.5.7 1.5 1.5S7.8 8.8 7 8.8zm11.3 9.5h-2.6V14c0-.9-.4-1.5-1.2-1.5-.7 0-1.1.5-1.3 1-.1.2-.1.4-.1.7v4.1h-2.6V10h2.6v1.1c.4-.6 1-1.3 2.4-1.3 1.8 0 3.1 1.1 3.1 3.6v4.9z"/></svg>',
+  tiktok:    '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path d="M16 3v3.4c1 .8 2.2 1.3 3.5 1.3v3.2c-1.3 0-2.5-.3-3.5-.9v5.8c0 3.4-2.8 6.2-6.2 6.2S3.6 19.2 3.6 15.8s2.8-6.2 6.2-6.2c.4 0 .7 0 1.1.1v3.3c-.3-.1-.7-.2-1.1-.2-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3V3H16z"/></svg>',
+  github:    '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path d="M12 2C6.5 2 2 6.6 2 12.2c0 4.5 2.9 8.3 6.8 9.6.5.1.7-.2.7-.5v-1.8c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.3 1.1 2.9.8.1-.7.4-1.1.7-1.4-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1 .8-.2 1.7-.3 2.5-.3s1.7.1 2.5.3c1.9-1.3 2.8-1 2.8-1 .6 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7.9.7 1.9v2.8c0 .3.2.6.7.5 3.9-1.3 6.8-5.1 6.8-9.6C22 6.6 17.5 2 12 2z"/></svg>',
+  facebook:  '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path d="M22 12c0-5.5-4.5-10-10-10S2 6.5 2 12c0 5 3.7 9.1 8.4 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.3v7c4.6-.8 8.4-4.9 8.4-9.9z"/></svg>',
+  whatsapp:  '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path d="M17.5 14.4c-.3-.1-1.7-.8-2-.9-.3-.1-.5-.1-.7.1-.2.3-.7.9-.9 1.1-.2.2-.3.2-.6.1-1.7-.9-2.9-1.6-4-3.5-.3-.5.3-.5.8-1.5.1-.2 0-.3 0-.5s-.7-1.6-.9-2.2c-.3-.6-.5-.5-.7-.5H8c-.2 0-.5.1-.7.3-.3.3-1 1-1 2.4s1.1 2.9 1.2 3.1c.1.2 2.1 3.3 5.2 4.6 2 .8 2.7.9 3.7.8.6-.1 1.7-.7 2-1.4.2-.7.2-1.2.2-1.4-.1-.2-.3-.3-.6-.5zM12 2C6.5 2 2 6.5 2 12c0 1.8.5 3.4 1.3 4.9L2 22l5.2-1.3c1.4.8 3 1.3 4.8 1.3 5.5 0 10-4.5 10-10S17.5 2 12 2z"/></svg>',
+  telegram:  '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path d="M21.2 3.4L2.5 10.7c-1.3.5-1.3 1.3-.2 1.6l4.8 1.5L18.3 7c.5-.3 1-.1.6.2L9.8 15.4l-.4 5c.5 0 .7-.2 1-.5l2.4-2.3 4.9 3.6c.9.5 1.5.2 1.8-.8l3.3-15.4c.3-1.3-.5-1.9-1.6-1.6z"/></svg>',
+  pinterest: '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor"><path d="M12 2C6.5 2 2 6.5 2 12c0 4.2 2.6 7.8 6.2 9.3-.1-.8-.2-2 0-2.9.2-.8 1.2-5 1.2-5s-.3-.6-.3-1.5c0-1.4.8-2.4 1.8-2.4.9 0 1.3.7 1.3 1.5 0 .9-.6 2.2-.9 3.5-.3 1 .5 1.9 1.5 1.9 1.8 0 3.2-1.9 3.2-4.6 0-2.4-1.7-4.1-4.2-4.1-2.9 0-4.6 2.1-4.6 4.4 0 .9.3 1.8.8 2.3.1.1.1.2.1.3 0 .1-.1.5-.1.6-.1.2-.2.3-.4.2-1.4-.6-2.2-2.7-2.2-4.3 0-3.5 2.5-6.7 7.3-6.7 3.8 0 6.8 2.7 6.8 6.4 0 3.8-2.4 6.9-5.8 6.9-1.1 0-2.2-.6-2.6-1.3 0 0-.6 2.1-.7 2.7-.3 1-1 2.3-1.5 3.1 1.1.3 2.3.5 3.5.5 5.5 0 10-4.5 10-10S17.5 2 12 2z"/></svg>',
+  email:     '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+  link:      '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"/><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"/></svg>',
+  writing:   '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>',
+  gallery:   '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.5"/><path d="M9 6l1.5-2h3L15 6"/></svg>',
+};
+
+function detectIcon(url) {
+  if (!url) return "link";
+  const u = url.toLowerCase();
+  for (const { id, patterns } of SLOT_DEFS.iconPatterns) {
+    for (const p of patterns) {
+      if (u.includes(p)) return id;
+    }
+  }
+  return "link";
+}
+
+// -----------------------------------------------------------------------------
+// Content helpers — every user-content interpolation MUST flow through these.
+// -----------------------------------------------------------------------------
+// esc(s)      — HTML-escape a string for safe text interpolation
+// md(s)       — Phase 1 minimal markdown: escape + paragraph-wrap (for longtext)
+//               TODO(phase-2): replace with marked.js when Tiptap is wired
+// safeUrl(u)  — reject javascript:/data:/vbscript: schemes, escape for href/src
+// imgUrl(ref) — resolve {asset, alt} image ref → blob URL via current assetMap
+// icon(id)    — return inline SVG string for one of the 14 baked-in icons
+const ESC_MAP = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+function esc(s) {
+  if (s == null) return "";
+  return String(s).replace(/[&<>"']/g, c => ESC_MAP[c]);
+}
+function md(s) {
+  if (s == null) return "";
+  const text = String(s).trim();
+  if (!text) return "";
+  return text.split(/\n\s*\n/).map(p => `<p>${esc(p).replace(/\n/g, "<br>")}</p>`).join("");
+}
+function safeUrl(u) {
+  if (u == null) return "#";
+  const s = String(u).trim();
+  if (!s) return "#";
+  if (/^(javascript|data|vbscript):/i.test(s)) return "#";
+  return esc(s);
+}
+let __ASSET_MAP = null; // set by the render entry point; reset per render call
+function imgUrl(ref) {
+  if (!ref || !ref.asset || !__ASSET_MAP) return null;
+  const entry = __ASSET_MAP.get(ref.asset);
+  return entry ? entry.url : null;
+}
+function icon(id) {
+  return ICONS[id] || ICONS.link;
+}
+
+// -----------------------------------------------------------------------------
+// 8. LAYOUTS — render functions
+// -----------------------------------------------------------------------------
+// Shape: { id, name, sub, pages: { <pageId>: render, ... } }
+// render(content, p) -> HTML string
+//   content = { site, page, pageId, pageOrder, assetMap? }
+//   p       = palette.slots   (7-slot object: BODY, PANEL, INK, BRAND, ACT, OK, ROW)
+// Layouts MUST only access palette colors via slot names (p.BODY, p.BRAND, …)
+// and typography via CSS vars (var(--kg-display), var(--kg-body), var(--kg-mono)).
+// Every user-content interpolation MUST go through esc() / md() / safeUrl() / icon().
+// Step 10 scope: each layout's PRIMARY page render (first entry in layoutPages).
+// Step 11 will add additional-page renders for layouts that support them.
+const LAYOUTS = [
+
+  {
+    id: "monolith", name: "Monolith", sub: "One page. One statement.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;padding:120px 40px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;font-family:var(--kg-body);">
+          <h1 style="font-family:var(--kg-display);font-size:64px;font-weight:500;line-height:1.02;margin:0 0 24px;letter-spacing:-1px;">${esc(s.site_name)}</h1>
+          <p style="font-size:18px;opacity:0.7;margin:0 0 80px;max-width:520px;line-height:1.5;">${esc(g.home_headline)}</p>
+          <div style="display:flex;gap:32px;font-size:14px;letter-spacing:0.5px;">
+            ${(s.site_social || []).map(l => `<a href="${safeUrl(l.url)}" style="color:${p.BRAND};text-decoration:none;">${esc(l.label)}</a>`).join("")}
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "atelier", name: "Atelier", sub: "Editorial. Identity and output.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        const about = (c.allPages && c.allPages.about) || {};
+        const work = (c.allPages && c.allPages.work) || {};
+        const items = (work.work_items || []).slice(0, 4);
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;padding:60px 56px;font-family:var(--kg-body);">
+          <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.6;margin-bottom:14px;">${esc(s.site_name)}</div>
+          <h1 style="font-family:var(--kg-display);font-size:48px;font-weight:500;line-height:1.05;margin:0 0 40px;letter-spacing:-0.5px;max-width:700px;">${esc(g.home_headline)}</h1>
+          <div style="display:grid;grid-template-columns:1fr 1.2fr;gap:48px;align-items:start;">
+            <div style="font-size:15px;line-height:1.7;opacity:0.85;">${md(about.about_body || g.home_intro)}</div>
+            <div>
+              <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.6;margin-bottom:14px;">${esc(work.work_headline || "Work")}</div>
+              ${items.map(w => `
+                <div style="display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-bottom:0.5px solid ${p.ROW};">
+                  <div style="width:44px;height:44px;background:${p.ROW};flex-shrink:0;border-radius:2px;"></div>
+                  <div>
+                    <div style="font-size:14px;font-weight:600;color:${p.ACT};">${esc(w.title)}</div>
+                    <div style="font-size:12px;opacity:0.65;margin-top:2px;">${esc(w.description)}</div>
+                  </div>
+                </div>`).join("")}
+            </div>
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "index", name: "Index", sub: "Archive. The collected works.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        const writing = (c.allPages && c.allPages.writing) || {};
+        const work = (c.allPages && c.allPages.work) || {};
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;padding:56px 64px;font-family:var(--kg-body);max-width:760px;">
+          <h1 style="font-size:22px;font-weight:600;margin:0 0 4px;">${esc(s.site_name)}</h1>
+          <p style="font-size:13px;opacity:0.6;margin:0 0 40px;">${esc(s.site_tagline)}.</p>
+          <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.55;margin-bottom:14px;">${esc(writing.writing_headline || "Writing")}</div>
+          <div style="margin-bottom:36px;">
+            ${(writing.writing_items || []).map(w => `
+              <div style="display:flex;justify-content:space-between;gap:20px;padding:8px 0;border-bottom:0.5px solid ${p.ROW};font-size:14px;">
+                <a href="${safeUrl(w.url)}" style="color:${p.ACT};text-decoration:none;">${esc(w.title)}</a>
+                <span style="opacity:0.5;font-variant-numeric:tabular-nums;">${esc(w.date)}</span>
+              </div>`).join("")}
+          </div>
+          <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.55;margin-bottom:14px;">${esc(work.work_headline || "Work")}</div>
+          <div>
+            ${(work.work_items || []).map(w => `
+              <div style="display:flex;justify-content:space-between;gap:20px;padding:8px 0;border-bottom:0.5px solid ${p.ROW};font-size:14px;">
+                <a href="${safeUrl(w.url)}" style="color:${p.ACT};text-decoration:none;">${esc(w.title)}</a>
+                <span style="opacity:0.5;font-size:12px;">${esc(w.description)}</span>
+              </div>`).join("")}
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "card", name: "Card", sub: "Linktree, but with taste.",
+    pages: {
+      // Card only supports the `links` page per spec §6
+      links: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        const links = g.links_list || [];
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;padding:80px 24px;display:flex;flex-direction:column;align-items:center;font-family:var(--kg-body);">
+          <div style="width:88px;height:88px;border-radius:50%;background:${p.BRAND};margin-bottom:20px;"></div>
+          <h1 style="font-size:22px;font-weight:600;margin:0 0 4px;">${esc(s.site_name)}</h1>
+          <p style="font-size:13px;opacity:0.65;margin:0 0 36px;">${esc(s.site_tagline)}</p>
+          <div style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:340px;">
+            ${links.map(l => `
+              <a href="${safeUrl(l.url)}" style="background:${p.PANEL};border:0.5px solid ${p.ROW};border-radius:6px;padding:14px 18px;text-align:center;font-size:14px;font-weight:500;color:${p.INK};text-decoration:none;display:block;">${esc(l.label)}</a>`).join("")}
+          </div>
+          <div style="display:flex;gap:18px;margin-top:32px;font-size:12px;">
+            ${(s.site_social || []).map(l => `<a href="${safeUrl(l.url)}" style="color:${p.BRAND};text-decoration:none;">${esc(l.label)}</a>`).join("")}
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "salon", name: "Salon", sub: "The full set. A proper home.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        const work = (c.allPages && c.allPages.work) || {};
+        const writing = (c.allPages && c.allPages.writing) || {};
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;font-family:var(--kg-body);">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:24px 48px;border-bottom:0.5px solid ${p.ROW};">
+            <div style="font-size:14px;font-weight:600;">${esc(s.site_name)}</div>
+            <div style="display:flex;gap:24px;font-size:13px;opacity:0.75;">
+              ${(c.exportedPageIds || c.pageOrder || ["home"]).map(pid => {
+                const href = pid === "home" ? "index.html" : pid + ".html";
+                const label = pid.charAt(0).toUpperCase() + pid.slice(1);
+                return `<a href="${esc(href)}" style="color:${p.INK};text-decoration:none;">${esc(label)}</a>`;
+              }).join("")}
+            </div>
+          </div>
+          <div style="padding:64px 48px 48px;max-width:880px;">
+            <h1 style="font-family:var(--kg-display);font-size:42px;font-weight:500;line-height:1.1;margin:0 0 16px;letter-spacing:-0.5px;">${esc(g.home_headline)}</h1>
+            <div style="font-size:16px;line-height:1.65;opacity:0.78;margin:0 0 48px;max-width:620px;">${md(g.home_intro)}</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:48px;">
+              <div>
+                <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.55;margin-bottom:12px;">${esc(work.work_headline || "Work")}</div>
+                ${(work.work_items || []).slice(0, 4).map(w => `
+                  <div style="padding:8px 0;border-bottom:0.5px solid ${p.ROW};">
+                    <div style="font-size:14px;font-weight:500;color:${p.ACT};">${esc(w.title)}</div>
+                    <div style="font-size:12px;opacity:0.6;">${esc(w.description)}</div>
+                  </div>`).join("")}
+              </div>
+              <div>
+                <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.55;margin-bottom:12px;">${esc(writing.writing_headline || "Writing")}</div>
+                ${(writing.writing_items || []).map(w => `
+                  <div style="padding:8px 0;border-bottom:0.5px solid ${p.ROW};">
+                    <div style="font-size:14px;font-weight:500;color:${p.ACT};">${esc(w.title)}</div>
+                    <div style="font-size:12px;opacity:0.6;">${esc(w.date)}</div>
+                  </div>`).join("")}
+              </div>
+            </div>
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "split", name: "Split", sub: "Half image, half text.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;display:grid;grid-template-columns:1fr 1fr;font-family:var(--kg-body);">
+          <div style="background:${p.BRAND};min-height:600px;"></div>
+          <div style="padding:80px 56px;display:flex;flex-direction:column;justify-content:center;">
+            <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.6;margin-bottom:14px;">${esc(s.site_name)}</div>
+            <h1 style="font-family:var(--kg-display);font-size:38px;font-weight:500;line-height:1.1;margin:0 0 20px;letter-spacing:-0.5px;">${esc(g.home_headline)}</h1>
+            <div style="font-size:15px;line-height:1.65;opacity:0.78;margin:0 0 32px;">${md(g.home_intro)}</div>
+            <div style="display:flex;gap:20px;font-size:13px;">
+              ${(s.site_social || []).map(l => `<a href="${safeUrl(l.url)}" style="color:${p.ACT};text-decoration:none;">${esc(l.label)}</a>`).join("")}
+            </div>
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "marquee", name: "Marquee", sub: "Type as the whole point.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        const words = String(s.site_name || "").split(/\s+/).filter(Boolean);
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;padding:48px;display:flex;flex-direction:column;justify-content:space-between;font-family:var(--kg-body);">
+          <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.6;">Est. 2024</div>
+          <div style="font-family:var(--kg-display);font-size:160px;font-weight:500;line-height:0.88;letter-spacing:-6px;text-transform:uppercase;">${words.map(w => `<div>${esc(w)}</div>`).join("")}</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:32px;">
+            <p style="font-size:14px;line-height:1.5;opacity:0.75;max-width:420px;margin:0;">${esc(g.home_headline)}</p>
+            <div style="display:flex;gap:18px;font-size:13px;">
+              ${(s.site_social || []).map(l => `<a href="${safeUrl(l.url)}" style="color:${p.BRAND};text-decoration:none;">${esc(l.label)} ↗</a>`).join("")}
+            </div>
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "tile", name: "Tile", sub: "A grid of squares.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        const work = (c.allPages && c.allPages.work) || {};
+        const items = (work.work_items || []).slice(0, 9);
+        const tileColors = [p.BRAND, p.ACT, p.OK, p.ROW, p.BRAND, p.ROW, p.ACT, p.OK, p.BRAND];
+        const empties = Math.max(0, 9 - items.length);
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;padding:48px;font-family:var(--kg-body);">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:32px;">
+            <div>
+              <h1 style="font-size:20px;font-weight:600;margin:0;">${esc(s.site_name)}</h1>
+              <p style="font-size:13px;opacity:0.6;margin:4px 0 0;">${esc(s.site_tagline)}</p>
+            </div>
+            <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.6;">${esc(work.work_headline || "Work")}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+            ${items.map((w, i) => `
+              <div style="aspect-ratio:1;background:${tileColors[i % tileColors.length]};position:relative;border-radius:2px;overflow:hidden;">
+                <div style="position:absolute;bottom:12px;left:12px;right:12px;color:${p.BODY};font-size:12px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.3);">${esc(w.title)}</div>
+              </div>`).join("")}
+            ${Array(empties).fill(0).map(() => `<div style="aspect-ratio:1;background:${p.ROW};border-radius:2px;"></div>`).join("")}
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "dossier", name: "Dossier", sub: "Looks like a printed document.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        const about = (c.allPages && c.allPages.about) || {};
+        const work = (c.allPages && c.allPages.work) || {};
+        const writing = (c.allPages && c.allPages.writing) || {};
+        const contactLines = (s.site_social || []).slice(0, 3).map(l => esc(l.label) + ": " + esc(l.url));
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;padding:64px 80px;font-family:var(--kg-body);max-width:780px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:20px;border-bottom:1px solid ${p.INK};margin-bottom:32px;">
+            <div>
+              <h1 style="font-family:var(--kg-display);font-size:30px;font-weight:500;margin:0;letter-spacing:-0.3px;">${esc(s.site_name)}</h1>
+              <p style="font-size:13px;opacity:0.7;margin:4px 0 0;">${esc(s.site_tagline)}</p>
+            </div>
+            <div style="font-size:12px;text-align:right;opacity:0.75;line-height:1.6;">
+              ${contactLines.join("<br>")}
+            </div>
+          </div>
+          <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.6;margin-bottom:10px;font-weight:600;">${esc(about.about_headline || "About")}</div>
+          <div style="font-size:14px;line-height:1.7;margin:0 0 28px;">${md(about.about_body || g.home_intro)}</div>
+          <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.6;margin-bottom:10px;font-weight:600;">${esc(work.work_headline || "Work")}</div>
+          <div style="font-size:13px;line-height:1.8;margin-bottom:28px;">
+            ${(work.work_items || []).map(w => `<div style="display:flex;gap:14px;"><span style="font-weight:600;min-width:120px;">${esc(w.title)}</span><span style="opacity:0.7;">${esc(w.description)}</span></div>`).join("")}
+          </div>
+          <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.6;margin-bottom:10px;font-weight:600;">${esc(writing.writing_headline || "Writing")}</div>
+          <div style="font-size:13px;line-height:1.8;">
+            ${(writing.writing_items || []).map(w => `<div style="display:flex;justify-content:space-between;"><span>${esc(w.title)}</span><span style="opacity:0.6;">${esc(w.date)}</span></div>`).join("")}
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "terminal", name: "Terminal", sub: "Monospace, code-aesthetic.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        const about = (c.allPages && c.allPages.about) || {};
+        const work = (c.allPages && c.allPages.work) || {};
+        const writing = (c.allPages && c.allPages.writing) || {};
+        const userSlug = String(s.site_name || "user").toLowerCase().replace(/\s+/g, "");
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;padding:48px 56px;font-family:var(--kg-mono);font-size:14px;line-height:1.7;">
+          <div style="margin-bottom:28px;opacity:0.7;">
+            <div>┌────────────────────────────────┐</div>
+            <div>│ ${esc(userSlug)}@kagaz:~$           │</div>
+            <div>└────────────────────────────────┘</div>
+          </div>
+          <div style="margin-bottom:6px;"><span style="color:${p.BRAND};">$</span> whoami</div>
+          <div style="margin-bottom:20px;padding-left:18px;">${esc(s.site_name)} · ${esc(s.site_tagline)}</div>
+          <div style="margin-bottom:6px;"><span style="color:${p.BRAND};">$</span> cat ./about.txt</div>
+          <div style="margin-bottom:20px;padding-left:18px;max-width:640px;opacity:0.85;">${md(about.about_body || g.home_intro)}</div>
+          <div style="margin-bottom:6px;"><span style="color:${p.BRAND};">$</span> ls ./work/</div>
+          <div style="margin-bottom:20px;padding-left:18px;">
+            ${(work.work_items || []).slice(0, 5).map(w => `<div><span style="color:${p.ACT};">${esc(String(w.title || "").toLowerCase())}/</span>   <span style="opacity:0.6;">${esc(w.description)}</span></div>`).join("")}
+          </div>
+          <div style="margin-bottom:6px;"><span style="color:${p.BRAND};">$</span> cat ./writing/index.md</div>
+          <div style="margin-bottom:20px;padding-left:18px;">
+            ${(writing.writing_items || []).map(w => `<div>- <span style="color:${p.ACT};">${esc(w.title)}</span>  <span style="opacity:0.5;">(${esc(w.date)})</span></div>`).join("")}
+          </div>
+          <div><span style="color:${p.BRAND};">$</span> <span style="background:${p.INK};color:${p.BODY};padding:0 4px;">_</span></div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "frame", name: "Frame", sub: "Matted print on a wall.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        return `
+        <div style="background:${p.BRAND};min-height:600px;padding:64px;display:flex;align-items:center;justify-content:center;font-family:var(--kg-body);">
+          <div style="background:${p.BODY};color:${p.INK};padding:80px 64px;max-width:560px;text-align:center;">
+            <div style="font-size:11px;letter-spacing:3px;text-transform:uppercase;opacity:0.55;margin-bottom:18px;">${esc(s.site_name)}</div>
+            <h1 style="font-family:var(--kg-display);font-size:34px;font-weight:500;line-height:1.15;margin:0 0 20px;letter-spacing:-0.3px;">${esc(g.home_headline)}</h1>
+            <div style="font-size:14px;line-height:1.65;opacity:0.78;margin:0 0 28px;">${md(g.home_intro)}</div>
+            <div style="display:flex;gap:18px;justify-content:center;font-size:12px;">
+              ${(s.site_social || []).map(l => `<a href="${safeUrl(l.url)}" style="color:${p.BRAND};text-decoration:none;">${esc(l.label)}</a>`).join("")}
+            </div>
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "letter", name: "Letter", sub: "A typewritten letter.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        const about = (c.allPages && c.allPages.about) || {};
+        const body = String(about.about_body || g.home_intro || "");
+        const sentences = body.split(". ");
+        const para1 = sentences.length >= 2 ? sentences.slice(0, 2).join(". ") + "." : body;
+        const para2 = sentences.length > 2 ? sentences.slice(2).join(". ") : "";
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;padding:80px 96px;font-family:var(--kg-body);max-width:680px;line-height:1.8;">
+          <div style="text-align:right;font-size:13px;opacity:0.7;margin-bottom:48px;">${new Date().getFullYear()}</div>
+          <div style="font-size:16px;margin-bottom:24px;">Dear visitor,</div>
+          <p style="font-size:15px;margin:0 0 20px;">${esc(para1)}</p>
+          ${para2 ? `<p style="font-size:15px;margin:0 0 20px;">${esc(para2)}</p>` : ""}
+          <p style="font-size:15px;margin:0 0 36px;">If any of this is interesting to you, the work itself lives at the links below. Otherwise, thank you for stopping by.</p>
+          <div style="font-size:15px;margin-bottom:6px;">Yours,</div>
+          <div style="font-family:var(--kg-display);font-style:italic;font-size:24px;color:${p.BRAND};">${esc(s.site_name)}</div>
+          <div style="margin-top:48px;padding-top:20px;border-top:0.5px solid ${p.ROW};font-size:12px;display:flex;gap:18px;">
+            ${(s.site_social || []).map(l => `<a href="${safeUrl(l.url)}" style="color:${p.ACT};text-decoration:none;">${esc(l.label)}</a>`).join("")}
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "newspaper", name: "Newspaper", sub: "Masthead and columns.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        const about = (c.allPages && c.allPages.about) || {};
+        const work = (c.allPages && c.allPages.work) || {};
+        const writing = (c.allPages && c.allPages.writing) || {};
+        const aboutSnippet = String(about.about_body || g.home_intro || "").split(". ").slice(0, 3).join(". ").trim();
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;padding:48px 56px;font-family:var(--kg-body);">
+          <div style="text-align:center;padding-bottom:14px;border-bottom:3px double ${p.INK};margin-bottom:8px;">
+            <h1 style="font-family:var(--kg-display);font-size:52px;font-weight:700;margin:0;letter-spacing:-1.5px;text-transform:uppercase;">${esc(s.site_name)}</h1>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;letter-spacing:1px;text-transform:uppercase;opacity:0.7;padding-bottom:20px;border-bottom:0.5px solid ${p.ROW};margin-bottom:24px;">
+            <span>Vol. I · No. 1</span>
+            <span>${esc(s.site_tagline)}</span>
+            <span>${esc(s.site_footer_text || "")}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px;">
+            <div>
+              <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;opacity:0.6;margin-bottom:8px;font-weight:600;">${esc(work.work_headline || "Work")}</div>
+              ${(work.work_items || []).slice(0, 3).map(w => `
+                <div style="margin-bottom:14px;">
+                  <div style="font-size:15px;font-weight:600;line-height:1.2;margin-bottom:4px;">${esc(w.title)}</div>
+                  <div style="font-size:12px;line-height:1.5;opacity:0.78;">${esc(w.description)}</div>
+                </div>`).join("")}
+            </div>
+            <div>
+              <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;opacity:0.6;margin-bottom:8px;font-weight:600;">From the editor</div>
+              <p style="font-size:13px;line-height:1.65;margin:0;">${esc(aboutSnippet)}${aboutSnippet && !aboutSnippet.endsWith(".") ? "." : ""}</p>
+            </div>
+            <div>
+              <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;opacity:0.6;margin-bottom:8px;font-weight:600;">${esc(writing.writing_headline || "Writing")}</div>
+              ${(writing.writing_items || []).map(w => `
+                <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:0.5px solid ${p.ROW};">
+                  <div style="font-size:13px;font-weight:600;line-height:1.3;color:${p.ACT};">${esc(w.title)}</div>
+                  <div style="font-size:11px;opacity:0.6;">${esc(w.date)}</div>
+                </div>`).join("")}
+            </div>
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "poster", name: "Poster", sub: "Gig poster hierarchy.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        const work = (c.allPages && c.allPages.work) || {};
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;padding:48px 56px;font-family:var(--kg-body);text-align:center;">
+          <div style="font-size:13px;letter-spacing:4px;text-transform:uppercase;margin-bottom:18px;color:${p.BRAND};">Now showing</div>
+          <h1 style="font-family:var(--kg-display);font-size:96px;font-weight:700;line-height:0.9;margin:0 0 8px;letter-spacing:-3px;text-transform:uppercase;">${esc(s.site_name)}</h1>
+          <div style="font-size:14px;letter-spacing:2px;text-transform:uppercase;opacity:0.65;margin-bottom:36px;">${esc(s.site_tagline)}</div>
+          <div style="border-top:2px solid ${p.INK};border-bottom:2px solid ${p.INK};padding:24px 0;margin-bottom:28px;">
+            ${(work.work_items || []).slice(0, 5).map(w => `
+              <div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 16px;font-size:15px;gap:16px;">
+                <span style="font-weight:600;text-transform:uppercase;letter-spacing:1px;">${esc(w.title)}</span>
+                <span style="flex:1;border-bottom:1px dotted ${p.ROW};height:1px;"></span>
+                <span style="font-size:12px;opacity:0.7;">${esc(w.description)}</span>
+              </div>`).join("")}
+          </div>
+          <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.6;">
+            ${(s.site_social || []).map(l => esc(l.label)).join(" · ")}
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+  {
+    id: "manifesto", name: "Manifesto", sub: "Long page, strong opinions.",
+    pages: {
+      home: (c, p) => {
+        const s = c.site || {}, g = c.page || {};
+        const about = (c.allPages && c.allPages.about) || {};
+        const body = String(about.about_body || "");
+        const sentences = body.split(". ");
+        const opener = sentences.length >= 2 ? sentences.slice(0, 2).join(". ") + "." : body;
+        const pullQuote = sentences[2] || "Most software is just an editor and a deployment pipeline bundled with hosting";
+        const closer = sentences.length > 3 ? sentences.slice(3).join(". ") : "";
+        return `
+        <div style="background:${p.BODY};color:${p.INK};min-height:600px;padding:80px 64px;font-family:var(--kg-body);max-width:720px;">
+          <div style="font-size:11px;letter-spacing:3px;text-transform:uppercase;opacity:0.6;margin-bottom:24px;">${esc(s.site_name)} · A manifesto</div>
+          <h1 style="font-family:var(--kg-display);font-size:56px;font-weight:500;line-height:1.0;margin:0 0 48px;letter-spacing:-1.5px;">${esc(g.home_headline)}</h1>
+          <p style="font-size:20px;line-height:1.55;margin:0 0 32px;font-style:italic;color:${p.BRAND};">${esc(g.home_intro)}</p>
+          <p style="font-size:17px;line-height:1.7;margin:0 0 24px;">${esc(opener)}</p>
+          <div style="border-left:3px solid ${p.BRAND};padding:8px 0 8px 24px;margin:32px 0;font-size:24px;line-height:1.3;font-style:italic;">&ldquo;${esc(pullQuote)}.&rdquo;</div>
+          ${closer ? `<p style="font-size:17px;line-height:1.7;margin:0 0 36px;">${esc(closer)}</p>` : ""}
+          <div style="padding-top:24px;border-top:0.5px solid ${p.ROW};font-size:13px;display:flex;gap:24px;">
+            ${(s.site_social || []).map(l => `<a href="${safeUrl(l.url)}" style="color:${p.ACT};text-decoration:none;">→ ${esc(l.label)}</a>`).join("")}
+          </div>
+        </div>`;
+      }
+    }
+  },
+
+];
+
+// -----------------------------------------------------------------------------
+// 9. FILE_FORMAT — .kagaz zip load/save + static site export
+// -----------------------------------------------------------------------------
+// A .kagaz file is a zip containing:
+//   project.json   — flat slot-keyed project data (see specs/file-format.md)
+//   assets/        — one file per referenced image asset, named {id}.{ext}
+//
+// loadKagazFile:  File      → project (with assetMap of blob URLs)
+// saveKagazFile:  project   → Blob   (drops orphan assets)
+// exportSite:     project   → Blob   (renders HTML + copies assets + drops source)
+
+// JSZip is lazy-loaded from CDN the first time any file op is called.
+// Cached as a promise so repeated calls reuse the one fetch.
+let __JSZipPromise = null;
+function loadJSZip() {
+  if (!__JSZipPromise) {
+    __JSZipPromise = import("https://cdn.jsdelivr.net/npm/jszip@3/+esm")
+      .then(mod => mod.default || mod.JSZip || mod)
+      .catch(err => {
+        __JSZipPromise = null; // allow retry
+        throw new Error("Failed to load JSZip from CDN: " + err.message);
+      });
+  }
+  return __JSZipPromise;
+}
+
+// Walk a project, collect every referenced asset id from image / list / site
+// slots. Used by save (drop orphans) and export (copy to site/assets/).
+function collectAssetRefs(project) {
+  const refs = new Set();
+  const visit = (v) => {
+    if (v == null || typeof v !== "object") return;
+    if (Array.isArray(v)) { v.forEach(visit); return; }
+    if (typeof v.asset === "string") { refs.add(v.asset); return; }
+    for (const k in v) visit(v[k]);
+  };
+  visit(project.site);
+  visit(project.pages);
+  return refs;
+}
+
+// Serialize a project to JSON, stripping runtime-only fields (assetMap).
+function projectToJson(project) {
+  const { assetMap, ...serializable } = project;
+  return JSON.stringify(serializable, null, 2);
+}
+
+// Turn a file extension into a mime type for Blob reconstruction on load.
+function mimeFromExt(ext) {
+  return {
+    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+    gif: "image/gif", webp: "image/webp", svg: "image/svg+xml"
+  }[String(ext).toLowerCase()] || "";
+}
+
+// Load a .kagaz file. Returns a project with assetMap (Map<id, {url, blob, mime, ext}>).
+// Throws on malformed zips, missing project.json, or future kagazVersion.
+async function loadKagazFile(file) {
+  const JSZip = await loadJSZip();
+  const zip = await JSZip.loadAsync(file);
+
+  const projectEntry = zip.file("project.json");
+  if (!projectEntry) throw new Error("Not a valid .kagaz file: missing project.json");
+
+  let project;
+  try {
+    project = JSON.parse(await projectEntry.async("string"));
+  } catch (e) {
+    throw new Error("project.json is not valid JSON: " + e.message);
+  }
+
+  // Version gate per specs/file-format.md §Versioning
+  const v = project.kagazVersion;
+  if (v == null) throw new Error("project.json: missing kagazVersion");
+  if (v > 1) throw new Error(`This file was made with Kagaz v${v}. Please update Kagaz.`);
+  // v < 1 would run forward migrations; v1 has no prior.
+
+  // Build asset map — one blob URL per file under assets/
+  const assetMap = new Map();
+  const assetFolder = zip.folder("assets");
+  if (assetFolder) {
+    const tasks = [];
+    assetFolder.forEach((relativePath, zipFile) => {
+      if (zipFile.dir) return;
+      const m = relativePath.match(/^(img-[\w-]+)\.([a-z0-9]+)$/i);
+      if (!m) return; // unknown filename shape, skip
+      const [, id, ext] = m;
+      tasks.push(
+        zipFile.async("blob").then(rawBlob => {
+          const mime = rawBlob.type || mimeFromExt(ext);
+          const blob = mime ? new Blob([rawBlob], { type: mime }) : rawBlob;
+          assetMap.set(id, { url: URL.createObjectURL(blob), blob, mime, ext });
+        })
+      );
+    });
+    await Promise.all(tasks);
+  }
+  project.assetMap = assetMap;
+  return project;
+}
+
+// Save a project to a .kagaz Blob.
+// - Updates updatedAt to now
+// - Drops orphan assets (present in assetMap but not referenced in content)
+// - Only referenced assets are written to the output zip
+async function saveKagazFile(project) {
+  const JSZip = await loadJSZip();
+  const zip = new JSZip();
+
+  const snapshot = {
+    ...project,
+    updatedAt: new Date().toISOString(),
+  };
+  // assetMap is runtime-only; projectToJson strips it
+  zip.file("project.json", projectToJson(snapshot));
+
+  const refs = collectAssetRefs(project);
+  if (project.assetMap && refs.size > 0) {
+    const assetFolder = zip.folder("assets");
+    for (const id of refs) {
+      const entry = project.assetMap.get(id);
+      if (!entry) continue; // content references an asset that isn't in memory; skip silently
+      const ext = entry.ext || "bin";
+      assetFolder.file(`${id}.${ext}`, entry.blob);
+    }
+  }
+
+  return zip.generateAsync({ type: "blob" });
+}
+
+// Build the per-page HTML shell. Inlines palette CSS vars + typography CSS
+// vars, emits meta/OG tags, favicon link if present. Every user-string
+// interpolation goes through esc() — title/description include user content.
+function buildHtmlShell({ title, description, faviconPath, palette, typography, body }) {
+  const p = palette.slots;
+  const t = esc(title);
+  const d = esc(description);
+  const faviconTag = faviconPath ? `\n<link rel="icon" type="image/png" href="${esc(faviconPath)}">` : "";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${t}</title>
+<meta name="description" content="${d}">
+<meta property="og:title" content="${t}">
+<meta property="og:description" content="${d}">
+<meta property="og:type" content="website">${faviconTag}
+<style>
+  :root {
+    --kg-display: ${typography.display};
+    --kg-body: ${typography.body};
+    --kg-mono: ${typography.mono};
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: ${p.BODY};
+    color: ${p.INK};
+    font-family: var(--kg-body);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+${body}
+</body>
+</html>`;
+}
+
+// Generate a 32x32 PNG favicon from the site_avatar image ref.
+// Browsers accept PNG bytes written as favicon.png via <link rel="icon">.
+// Returns a Blob, or null if no avatar is set / decode fails.
+async function generateFavicon(avatarRef, assetMap) {
+  if (!avatarRef || !avatarRef.asset || !assetMap) return null;
+  const entry = assetMap.get(avatarRef.asset);
+  if (!entry) return null;
+
+  const img = new Image();
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = () => reject(new Error("Failed to decode avatar for favicon"));
+    img.src = entry.url;
+  });
+
+  const canvas = document.createElement("canvas");
+  canvas.width = 32;
+  canvas.height = 32;
+  const ctx = canvas.getContext("2d");
+  // Center-crop to square, then scale to 32x32
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const s = Math.min(w, h);
+  const sx = (w - s) / 2;
+  const sy = (h - s) / 2;
+  ctx.drawImage(img, sx, sy, s, s, 0, 0, 32, 32);
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      blob => blob ? resolve(blob) : reject(new Error("favicon toBlob returned null")),
+      "image/png"
+    );
+  });
+}
+
+// Export a project as a deployable static site zip.
+// Pipeline per specs/file-format.md §Export sequence + specs/v1-spec.md §12:
+//   1. Validate combination (layout / palette / typography all exist)
+//   2. Determine exportable pages: pageOrder ∩ layout.supportedPages ∩ has-render
+//   3. Build an "export-mode" project whose asset URLs resolve to deployment
+//      paths (assets/{id}.{ext}) instead of blob: URLs
+//   4. Generate favicon from site_avatar if present
+//   5. Render each exported page, wrap in HTML shell, write to zip root
+//   6. Copy referenced assets into assets/ (orphans dropped)
+//   7. Drop source.kagaz alongside so the user always has both artifacts
+async function exportSite(project) {
+  const JSZip = await loadJSZip();
+  const zip = new JSZip();
+
+  // 1. Validate combination
+  const combo = project.combination || {};
+  const layout = LAYOUTS.find(L => L.id === combo.layoutId);
+  if (!layout) throw new Error("Unknown layout: " + combo.layoutId);
+  const palette = PALETTES.find(p => p.id === combo.paletteId);
+  if (!palette) throw new Error("Unknown palette: " + combo.paletteId);
+  const typography = TYPOGRAPHIES.find(t => t.id === combo.typographyId);
+  if (!typography) throw new Error("Unknown typography: " + combo.typographyId);
+
+  // 2. Which pages are actually exportable
+  const supported = SLOT_DEFS.layoutPages[layout.id] || [];
+  const pageOrder = project.pageOrder || [];
+  let exportedPageIds = pageOrder.filter(pid => supported.includes(pid) && layout.pages[pid]);
+  if (exportedPageIds.length === 0) {
+    // Fallback: any supported page with a render, primary first
+    const primary = supported.find(pid => layout.pages[pid]);
+    if (!primary) throw new Error(`Layout ${layout.id} has no renderable pages`);
+    exportedPageIds = [primary];
+  }
+
+  // 3. Export-mode project: asset URLs swapped to deployment paths
+  const exportAssetMap = new Map();
+  if (project.assetMap) {
+    for (const [id, entry] of project.assetMap) {
+      exportAssetMap.set(id, { ...entry, url: `assets/${id}.${entry.ext || "bin"}` });
+    }
+  }
+  const exportProject = {
+    ...project,
+    assetMap: exportAssetMap,
+    exportedPageIds, // layouts that render nav read this via content
+  };
+
+  // 4. Favicon
+  let faviconPath = null;
+  try {
+    const fav = await generateFavicon(project.site && project.site.site_avatar, project.assetMap);
+    if (fav) {
+      zip.file("favicon.png", fav);
+      faviconPath = "favicon.png";
+    }
+  } catch (err) {
+    console.warn("Favicon generation failed, skipping:", err);
+  }
+
+  // 5. Render each page
+  const site = project.site || {};
+  const homePage = (project.pages && project.pages.home) || {};
+  const title = site.site_name || "Untitled";
+  const description = site.site_tagline || homePage.home_sub || "";
+
+  const savedMap = __ASSET_MAP;
+  __ASSET_MAP = exportAssetMap;
+  try {
+    for (const pid of exportedPageIds) {
+      const content = buildPageContent(exportProject, pid);
+      content.exportedPageIds = exportedPageIds;
+      const body = layout.pages[pid](content, palette.slots);
+      const html = buildHtmlShell({ title, description, faviconPath, palette, typography, body });
+      const filename = pid === "home" ? "index.html" : `${pid}.html`;
+      zip.file(filename, html);
+    }
+  } finally {
+    __ASSET_MAP = savedMap;
+  }
+
+  // 6. Copy referenced assets (orphans dropped)
+  const refs = collectAssetRefs(project);
+  if (project.assetMap && refs.size > 0) {
+    const assetFolder = zip.folder("assets");
+    for (const id of refs) {
+      const entry = project.assetMap.get(id);
+      if (!entry) continue;
+      assetFolder.file(`${id}.${entry.ext || "bin"}`, entry.blob);
+    }
+  }
+
+  // 7. Embed source.kagaz alongside
+  try {
+    const sourceBlob = await saveKagazFile(project);
+    zip.file("source.kagaz", sourceBlob);
+  } catch (err) {
+    console.warn("Failed to embed source.kagaz:", err);
+  }
+
+  return zip.generateAsync({ type: "blob" });
+}
+
+// ----- Small browser utilities used by the button wiring -----
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function slugify(s) {
+  return String(s || "untitled").toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "untitled";
+}
+
+async function withLoadingState(btn, label, fn) {
+  const orig = btn.textContent;
+  btn.textContent = label;
+  btn.disabled = true;
+  try { return await fn(); }
+  finally { btn.textContent = orig; btn.disabled = false; }
+}
+
+// -----------------------------------------------------------------------------
+// 10. SMOKE_TEST — Phase 1 demo harness
+// -----------------------------------------------------------------------------
+// Hand-crafted spec-shaped project. Content reshaped from the workshop's sample
+// identity into the locked slot vocabulary. Used as a fixture for Phase 1 smoke
+// testing. Step 14+ will produce a real .kagaz zip from this via saveKagazFile().
+const DEMO_PROJECT = {
+  kagazVersion: 1,
+  createdAt: "2026-04-09T00:00:00Z",
+  updatedAt: "2026-04-09T00:00:00Z",
+  combination: { layoutId: "atelier", paletteId: "cn-02-mizhi", typographyId: "editorial" },
+  site: {
+    site_name: "Chirag Patnaik",
+    site_tagline: "Builds browser-native tools",
+    site_avatar: null,
+    site_footer_text: "Bombay, IN",
+    site_social: [
+      { id: "s1", label: "GitHub", url: "https://github.com/naklitechie",  icon: "github" },
+      { id: "s2", label: "X",      url: "https://x.com/naklitechie",       icon: "x" },
+      { id: "s3", label: "Email",  url: "mailto:chirag@example.com",       icon: "email" },
+    ],
+  },
+  pageOrder: ["home", "about", "work", "writing", "links", "gallery", "contact"],
+  pages: {
+    home: {
+      home_headline: "Browser-native tools for everyday work.",
+      home_sub:      "No accounts. No servers. No data leaving your device.",
+      home_intro:    "Bombay-based product person. I design specs for coding agents and ship small browser-native tools under the NakliTechie banner.",
+      home_image:    null,
+      home_cta:      [],
+    },
+    about: {
+      about_headline: "About",
+      about_body:     "I'm a product person who designs specs for coding agents to implement. I've been shipping small browser-native tools under the NakliTechie banner — single HTML files that run entirely on your device, with no servers, accounts, or data leaving the browser. The thesis is simple: most software you pay a monthly fee for is just an editor and a deployment pipeline bundled with hosting. Take any two of those away and the third becomes free. So I'm taking them away, one tool at a time.",
+      about_image:    null,
+      about_facts: [
+        { id: "f1", label: "Based in",   value: "Bombay, IN" },
+        { id: "f2", label: "Working on", value: "Kagaz, Bahi" },
+        { id: "f3", label: "Reading",    value: "On Writing Well" },
+      ],
+    },
+    work: {
+      work_headline: "Selected work",
+      work_intro:    "A few of the tools from the NakliTechie portfolio.",
+      work_items: [
+        { id: "w1", title: "LocalMind",  description: "On-device LLM client. Gemma via WebGPU.", url: "#" },
+        { id: "w2", title: "BOFH",       description: "Browser-native dev toolkit. ~20 modules.", url: "#" },
+        { id: "w3", title: "KanZen",     description: "Local-first kanban board.", url: "#" },
+        { id: "w4", title: "VoiceVault", description: "Whisper transcription, in-browser.", url: "#" },
+        { id: "w5", title: "Nemawashi",  description: "Multi-axis group consensus tool.", url: "#" },
+        { id: "w6", title: "VaultMind",  description: "Obsidian vault explorer.", url: "#" },
+      ],
+    },
+    writing: {
+      writing_headline: "Writing",
+      writing_intro:    "",
+      writing_items: [
+        { id: "e1", title: "Specs as the new programming language",   description: "", url: "#", date: "2026" },
+        { id: "e2", title: "The death of the SaaS subscription",      description: "", url: "#", date: "2025" },
+        { id: "e3", title: "Why your tools should run on your device", description: "", url: "#", date: "2025" },
+      ],
+    },
+    links: {
+      links_headline: "Links",
+      links_intro:    "",
+      links_list: [
+        { id: "l1", label: "Portfolio",   url: "https://naklitechie.github.io/", icon: "link" },
+        { id: "l2", label: "GitHub",      url: "https://github.com/naklitechie", icon: "github" },
+        { id: "l3", label: "Latest essay", url: "#",                              icon: "writing" },
+        { id: "l4", label: "Email me",    url: "mailto:chirag@example.com",      icon: "email" },
+      ],
+    },
+    gallery: { gallery_headline: "Gallery", gallery_intro: "", gallery_items: [] },
+    contact: {
+      contact_headline: "Contact",
+      contact_body:     "Best way to reach me is email or GitHub.",
+      contact_methods: [
+        { id: "c1", label: "Email",    value: "chirag@example.com", url: "mailto:chirag@example.com" },
+        { id: "c2", label: "Based in", value: "Bombay, IN",         url: "" },
+      ],
+      contact_social: [],
+    },
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Render entry point — builds the per-page content view and calls the layout.
+// -----------------------------------------------------------------------------
+function buildPageContent(project, pageId) {
+  return {
+    site: project.site || {},
+    page: (project.pages || {})[pageId] || {},
+    pageId,
+    pageOrder: project.pageOrder || [pageId],
+    allPages: project.pages || {}, // Phase 1: layouts that surface multiple pages
+                                    // on the home render read sibling pages here.
+    assetMap: project.assetMap || null,
+  };
+}
+
+function renderPage(project, layoutId, pageId, paletteId, typographyId) {
+  const layout = LAYOUTS.find(L => L.id === layoutId);
+  if (!layout) throw new Error("Unknown layout: " + layoutId);
+  const pageRender = layout.pages[pageId];
+  if (!pageRender) throw new Error(`Layout ${layoutId} has no render for page ${pageId}`);
+  const palette = PALETTES.find(p => p.id === paletteId);
+  if (!palette) throw new Error("Unknown palette: " + paletteId);
+  const typography = TYPOGRAPHIES.find(t => t.id === typographyId);
+  if (!typography) throw new Error("Unknown typography: " + typographyId);
+  __ASSET_MAP = project.assetMap || null;
+  const content = buildPageContent(project, pageId);
+  const body = pageRender(content, palette.slots);
+  // Wrap in a host div that sets the typography CSS vars
+  return `<div style="--kg-display:${typography.display};--kg-body:${typography.body};--kg-mono:${typography.mono};">${body}</div>`;
+}
+
+// -----------------------------------------------------------------------------
+// Phase 1 smoke harness
+// -----------------------------------------------------------------------------
+const $ = (sel) => document.querySelector(sel);
+const setStatus = (msg) => { $("#status").textContent = msg; };
+
+// The currently loaded project. Set by Load Demo / Open, read by Save / Export.
+let __currentProject = null;
+
+// Render the current project's primary page using its combination.
+function renderCurrentProject(note) {
+  if (!__currentProject) { setStatus("No project loaded."); return; }
+  const combo = __currentProject.combination;
+  const layout = LAYOUTS.find(L => L.id === combo.layoutId);
+  if (!layout) { setStatus("Unknown layout: " + combo.layoutId); return; }
+  const pages = SLOT_DEFS.layoutPages[layout.id];
+  if (!pages || !pages.length) { setStatus("Layout has no supported pages: " + layout.id); return; }
+  const pageId = pages[0];
+  try {
+    $("#preview").innerHTML = renderPage(__currentProject, layout.id, pageId, combo.paletteId, combo.typographyId);
+    const name = __currentProject.site && __currentProject.site.site_name;
+    const prefix = note ? note + " · " : "";
+    setStatus(`${prefix}${name || "Untitled"} · ${layout.name} · ${combo.paletteId} · ${combo.typographyId}`);
+  } catch (err) {
+    $("#preview").innerHTML = `<div style="padding:20px;color:#c81018;font-family:ui-monospace,Menlo,monospace;">Render error in ${layout.id}/${pageId}: ${esc(err.message)}</div>`;
+    setStatus(`ERROR in ${layout.id}: ${err.message}`);
+    console.error(err);
+  }
+}
+
+// Dev helper — exposed for console smoke testing. Renders every layout in turn,
+// returns an array of {id, pageId, ok, error?} per spec §16 step 6.
+window.smokeAllLayouts = function smokeAllLayouts() {
+  const results = [];
+  for (const L of LAYOUTS) {
+    const pid = SLOT_DEFS.layoutPages[L.id][0];
+    const combo = DEMO_PROJECT.combination;
+    try {
+      const html = renderPage(DEMO_PROJECT, L.id, pid, combo.paletteId, combo.typographyId);
+      results.push({ id: L.id, pageId: pid, ok: true, len: html.length });
+    } catch (err) {
+      results.push({ id: L.id, pageId: pid, ok: false, error: err.message });
+    }
+  }
+  return results;
+};
+
+// Hidden file input, triggered by the Open button.
+const __openInput = document.createElement("input");
+__openInput.type = "file";
+__openInput.accept = ".kagaz,application/zip";
+__openInput.style.display = "none";
+document.body.appendChild(__openInput);
+
+__openInput.addEventListener("change", async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const btn = $("#openFile");
+  try {
+    await withLoadingState(btn, "loading…", async () => {
+      __currentProject = await loadKagazFile(file);
+      renderCurrentProject(`Opened ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+    });
+  } catch (err) {
+    setStatus("Open failed: " + err.message);
+    console.error(err);
+  } finally {
+    __openInput.value = ""; // reset so same file can be re-selected
+  }
+});
+
+setStatus(`Engine loaded. ${PALETTES.length} palettes · ${TYPOGRAPHIES.length} typographies · ${LAYOUTS.length} layouts · ${COMBINATIONS.length} combinations. Click "Load demo project" to hydrate a fixture.`);
+
+$("#loadDemo").addEventListener("click", () => {
+  // Deep clone so in-session edits don't mutate the const DEMO_PROJECT.
+  __currentProject = structuredClone(DEMO_PROJECT);
+  renderCurrentProject("Loaded demo");
+});
+
+$("#openFile").addEventListener("click", () => __openInput.click());
+
+$("#saveFile").addEventListener("click", async () => {
+  if (!__currentProject) { setStatus("Load a project first."); return; }
+  const btn = $("#saveFile");
+  try {
+    await withLoadingState(btn, "saving…", async () => {
+      const blob = await saveKagazFile(__currentProject);
+      const filename = slugify(__currentProject.site && __currentProject.site.site_name) + ".kagaz";
+      downloadBlob(blob, filename);
+      setStatus(`Saved ${filename} (${(blob.size / 1024).toFixed(1)} KB)`);
+    });
+  } catch (err) {
+    setStatus("Save failed: " + err.message);
+    console.error(err);
+  }
+});
+
+$("#exportSite").addEventListener("click", async () => {
+  if (!__currentProject) { setStatus("Load a project first."); return; }
+  const btn = $("#exportSite");
+  try {
+    await withLoadingState(btn, "exporting…", async () => {
+      const blob = await exportSite(__currentProject);
+      const filename = slugify(__currentProject.site && __currentProject.site.site_name) + "-site.zip";
+      downloadBlob(blob, filename);
+      setStatus(`Exported ${filename} (${(blob.size / 1024).toFixed(1)} KB)`);
+    });
+  } catch (err) {
+    setStatus("Export failed: " + err.message);
+    console.error(err);
+  }
+});
+</script>
+</body>
+</html>
