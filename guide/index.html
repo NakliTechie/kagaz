@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kagaz — Guide</title>
+<style>
+  :root {
+    --bg:        #fafaf8;
+    --fg:        #1c1815;
+    --muted:     #6b6b68;
+    --line:      #e5e5e2;
+    --line-s:    #d4d4d0;
+    --panel:     #ffffff;
+    --soft:      #f4f4f1;
+    --brand:     #1c1815;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { font-size: 16px; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.6;
+  }
+
+  /* ── Topbar ────────────────────────────────────────────────────────────── */
+  .topbar {
+    position: sticky; top: 0; z-index: 100;
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 28px;
+    background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  .brand-block { display: flex; align-items: baseline; gap: 8px; }
+  .brand { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
+  .brand-sub { margin: 0; font-size: 9px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; }
+  .topbar-sep { font-size: 12px; color: var(--line-s); }
+  .topbar-title { font-size: 13px; color: var(--muted); }
+  .back-link {
+    margin-left: auto;
+    font-size: 12px; color: var(--muted); text-decoration: none;
+    padding: 4px 10px; border: 1px solid var(--line); border-radius: 4px;
+    background: var(--soft);
+  }
+  .back-link:hover { color: var(--fg); border-color: var(--line-s); }
+
+  /* ── Layout ────────────────────────────────────────────────────────────── */
+  .page {
+    max-width: 800px; margin: 0 auto;
+    padding: 56px 28px 100px;
+  }
+
+  /* ── Typography ────────────────────────────────────────────────────────── */
+  h1 {
+    font-size: 2rem; font-weight: 800; letter-spacing: -0.5px;
+    margin: 0 0 8px; line-height: 1.15;
+  }
+  .lede {
+    font-size: 1.05rem; color: var(--muted);
+    margin: 0 0 48px; line-height: 1.5;
+  }
+  h2 {
+    font-size: 1.15rem; font-weight: 700;
+    margin: 56px 0 16px; letter-spacing: -0.2px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--line);
+  }
+  h3 {
+    font-size: 0.95rem; font-weight: 600;
+    margin: 28px 0 10px; color: var(--fg);
+  }
+  p { margin: 0 0 16px; font-size: 0.96rem; }
+  ul, ol { margin: 0 0 16px; padding-left: 1.4em; font-size: 0.96rem; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 600; }
+  em { font-style: italic; }
+  code {
+    font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+    font-size: 0.82em; background: var(--soft);
+    border: 1px solid var(--line); border-radius: 3px;
+    padding: 1px 5px; white-space: nowrap;
+  }
+  pre {
+    background: var(--soft); border: 1px solid var(--line);
+    border-radius: 6px; padding: 16px 18px; overflow-x: auto;
+    margin: 0 0 20px;
+  }
+  pre code {
+    background: none; border: none; padding: 0;
+    font-size: 0.88rem; white-space: pre;
+  }
+
+  /* ── Screenshots ───────────────────────────────────────────────────────── */
+  .screenshot {
+    display: block; width: 100%;
+    border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    margin: 20px 0 28px;
+  }
+
+  /* ── Tips box ──────────────────────────────────────────────────────────── */
+  .tips {
+    background: var(--soft); border: 1px solid var(--line);
+    border-radius: 8px; padding: 20px 24px; margin-top: 48px;
+  }
+  .tips h2 {
+    margin-top: 0; padding-bottom: 0; border-bottom: none;
+    font-size: 1rem;
+  }
+  .tips ul { margin-bottom: 0; }
+
+  /* ── Divider ───────────────────────────────────────────────────────────── */
+  hr { border: none; border-top: 1px solid var(--line); margin: 40px 0; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand-block">
+    <h1 class="brand">Kagaz</h1>
+    <p class="brand-sub">काग़ज़ · paper</p>
+  </div>
+  <span class="topbar-sep">›</span>
+  <span class="topbar-title">Guide</span>
+  <a class="back-link" href="../index.html">← Back to editor</a>
+</header>
+
+<div class="page">
+
+  <h1>Walkthrough</h1>
+  <p class="lede">From choosing a combination to exporting a deployable site — everything you need to know, in order.</p>
+
+  <!-- 1 -->
+  <h2>1. The Choose screen</h2>
+  <p>When you open Kagaz, you land on the <strong>Choose screen</strong> — a grid of 57 curated combinations. Each combination locks three things at once: a <strong>layout</strong>, a <strong>colour palette</strong>, and a <strong>typography</strong> pairing. Pick one to start; you can change any of them later.</p>
+
+  <img class="screenshot" src="screenshots/01-choose.png" alt="The Choose screen showing 57 combination cards in a grid">
+
+  <p>Each card shows a four-colour swatch (body, brand, action, ink), a name and flavour line, and pills for the layout and typography.</p>
+
+  <h3>Searching and filtering</h3>
+  <p>The <strong>search box</strong> matches against combination names and descriptions. The <strong>layout filter pills</strong> below it narrow the grid to combinations that use a specific layout.</p>
+
+  <img class="screenshot" src="screenshots/03-search.png" alt="Choose screen filtered to Terminal combinations">
+  <img class="screenshot" src="screenshots/04-layout-filter.png" alt="Choose screen with a layout filter pill active">
+
+  <h3>Learning about a layout</h3>
+  <p>Hover any card and an <strong><code>i</code> button</strong> appears in the top corner of the swatch. Click it to read the layout's story — who it's for, what it signals, which palettes pair best with it.</p>
+
+  <img class="screenshot" src="screenshots/02-story-modal.png" alt="Layout story modal open over the choose screen">
+
+  <p>Press <strong>Escape</strong> or click the backdrop to close.</p>
+
+  <!-- 2 -->
+  <h2>2. Picking a combination</h2>
+  <p>Click any card to start a new project with that combination. All content slots start empty — the combination sets the visual language, you supply the words.</p>
+
+  <p><strong>Already know what you want?</strong> Click <strong>Skip →</strong> in the top-right corner to jump straight into the editor with the <em>Architect</em> default (Monolith layout, Sumi palette, System typography) — a clean, severe single-statement page that works for almost any announcement.</p>
+
+  <p><strong>Opening an existing project?</strong> Click <strong>Open .kagaz ↑</strong> to load a previously saved file, or use the <strong>Open</strong> button in the topbar at any time.</p>
+
+  <!-- 3 -->
+  <h2>3. The editor</h2>
+  <p>The editor is a two-column layout: the <strong>content form</strong> on the left, the <strong>live preview</strong> on the right. Every change in the form updates the preview immediately.</p>
+
+  <img class="screenshot" src="screenshots/06-editor-demo.png" alt="The Kagaz editor with demo content loaded, showing form and live preview side by side">
+
+  <p>The topbar shows the active combination as three clickable pills — <strong>Layout</strong>, <strong>Palette</strong>, <strong>Type</strong> — and the action buttons: Load demo, Open, Save, Preview, Export.</p>
+
+  <!-- 4 -->
+  <h2>4. Filling in content</h2>
+  <p>The form is split into two sections: <strong>Site</strong> (identity fields that appear on every page) and <strong>Page</strong> (fields for the currently-active page).</p>
+
+  <img class="screenshot" src="screenshots/07-form-site.png" alt="Form showing site-level fields: site name, tagline, avatar, footer text, social links">
+  <img class="screenshot" src="screenshots/08-form-page.png" alt="Form scrolled to show page-level fields">
+
+  <p>Field types:</p>
+  <ul>
+    <li><strong>Text</strong> — single line, with a soft character-count hint. Going over is allowed.</li>
+    <li><strong>Long text</strong> — multi-line markdown textarea. Supports <code>**bold**</code>, <code>*italic*</code>, <code>[links](url)</code>, <code>- lists</code>.</li>
+    <li><strong>Image</strong> — drop a JPEG/PNG/GIF/WebP onto the drop zone, or click to pick a file. Kagaz compresses it to max 1200 px JPEG automatically.</li>
+    <li><strong>List</strong> — repeatable items (e.g. work projects, blog posts). Each item has sub-fields. Use the arrow buttons to reorder; paste from a spreadsheet column to bulk-add rows.</li>
+    <li><strong>Links</strong> — label + URL pairs. Icons are auto-detected from the URL (GitHub, Instagram, X, LinkedIn, and 10 others).</li>
+  </ul>
+
+  <!-- 5 -->
+  <h2>5. Switching pages</h2>
+  <p>Layouts that support multiple pages show <strong>page tabs</strong> across the top of the form. Click a tab to switch; the preview follows.</p>
+
+  <img class="screenshot" src="screenshots/09-about-tab.png" alt="Editor with the About page tab active, showing about page content and preview">
+
+  <p>Click <strong>»</strong> (the add button after the last tab) to add a page from the types the current layout supports. Click the <strong>×</strong> on a tab to remove that page. Up to 5 pages per project.</p>
+
+  <!-- 6 -->
+  <h2>6. Changing layout, palette, or typography</h2>
+  <p>Click any of the three pills in the topbar to open the axis picker for that dimension. Switching is always non-destructive — content for pages the new layout doesn't support is kept in memory.</p>
+
+  <img class="screenshot" src="screenshots/10-layout-picker.png" alt="Layout picker open, showing 15 layout options">
+  <img class="screenshot" src="screenshots/11-palette-picker.png" alt="Palette picker open, showing culturally-named palettes grouped by family">
+  <img class="screenshot" src="screenshots/12-typography-picker.png" alt="Typography picker open, showing 8 pairing options">
+
+  <p>The preview updates live as you browse. Press <strong>Escape</strong> or click outside to close a picker without committing.</p>
+
+  <!-- 7 -->
+  <h2>7. Saving your work</h2>
+  <p><strong>Autosave:</strong> Kagaz saves your text content to <code>localStorage</code> every 30 seconds (images excluded). If you close the tab and reopen Kagaz, a toast will offer to restore your last session.</p>
+
+  <p><strong>Save as .kagaz:</strong> Click <strong>Save</strong> to download a <code>.kagaz</code> file — a zip of <code>project.json</code> plus any images you added. This is your editable source; keep it somewhere safe.</p>
+
+  <p>The <code>.kagaz</code> format is open: it's a zip you can unzip by hand, version-control, or sync however you like.</p>
+
+  <!-- 8 -->
+  <h2>8. Previewing and exporting</h2>
+  <p>Click <strong>Preview</strong> to open a new tab showing the exported site — no editor chrome, real layout. Use it to proofread before you export.</p>
+
+  <img class="screenshot" src="screenshots/13-site-preview.png" alt="The exported site open in a new browser tab">
+
+  <p>Click <strong>Export</strong> to download a zip of the full deployable site:</p>
+
+  <pre><code>your-site-name.zip
+├── index.html        (+ about.html, work.html … for multi-page layouts)
+├── assets/           (only the images you actually used)
+├── favicon.png       (auto-generated from your avatar, if set)
+└── source.kagaz      (your editable source, embedded alongside)</code></pre>
+
+  <p>The HTML files are pure static — no JavaScript, no tracking, no third-party requests. Drag the unzipped folder into:</p>
+  <ul>
+    <li><strong>Cloudflare Pages</strong> — drag the folder onto the Pages dashboard</li>
+    <li><strong>Netlify</strong> — drag the folder onto the Netlify drop zone</li>
+    <li><strong>GitHub Pages</strong> — push the files to a <code>gh-pages</code> branch</li>
+    <li>Any static host — it's just HTML and a folder of images</li>
+  </ul>
+
+  <p>The <code>source.kagaz</code> inside the zip is a copy of your editable project. If you lose your local file, download your own deployed site, unzip it, and use <code>source.kagaz</code> to re-edit.</p>
+
+  <div class="tips">
+    <h2>Tips</h2>
+    <ul>
+      <li><strong>The combination is a starting point, not a commitment.</strong> Swap the palette after picking a layout; swap the layout after you like the palette. Nothing is locked.</li>
+      <li><strong>Soft character limits are suggestions.</strong> The form shows a count when you approach the recommended length; going over is allowed.</li>
+      <li><strong>Drop images at any size.</strong> Kagaz re-encodes to max 1200 px JPEG at 0.85 quality — no need to pre-resize.</li>
+      <li><strong>Paste lists from a spreadsheet.</strong> Copy a column of text and paste it into a list field to bulk-add items.</li>
+      <li><strong>The exported site contains the source.</strong> You can't lose your project as long as your site is live somewhere.</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

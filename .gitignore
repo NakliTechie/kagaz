@@ -5,6 +5,7 @@
 !.gitignore
 !guide/
 guide/*
+!guide/index.html
 !guide/guide.md
 !guide/screenshots/
 guide/screenshots/*
