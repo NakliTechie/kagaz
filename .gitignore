@@ -3,3 +3,9 @@
 !README.md
 !LICENSE
 !.gitignore
+!guide/
+guide/*
+!guide/guide.md
+!guide/screenshots/
+guide/screenshots/*
+!guide/screenshots/*.png
