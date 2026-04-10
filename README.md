@@ -51,11 +51,11 @@ my-site.zip
 
 ## Status
 
-**Phase 1 — engine.** The core engine is working: load `.kagaz`, render any of the 15 layouts with any of the 240 palettes and 8 typographies, save back to `.kagaz`, export to a deployable static site. Visible at the live URL above as a smoke-test harness.
+**v1 — shipped.** The full editor is live. All three build phases are complete:
 
-**Phase 2 — editor UI.** The full Choose / Fill / Save / Export workflow with a content editor, image drop zone, list editors, page tabs, layout/palette/typography pickers. Coming next.
-
-**Phase 3 — polish.** Multi-page layout renders, the 60-second video walkthrough, the combinations grid with live previews on the Choose screen.
+- **Engine** — 15 layout render functions, 240 palettes, 8 typographies, 57 curated combinations, `.kagaz` save/load, static export pipeline.
+- **Editor UI** — Choose screen (57 combination cards, search, layout filter), Fill form with image drop zones, list editors with reorder and paste-from-CSV, links editor with 14 auto-detected icons, page tabs with add/remove, axis pickers to swap layout/palette/typography non-destructively, live preview, localStorage autosave.
+- **Polish** — plain-English form labels, layout story modals (click the `i` on any card), Skip link for instant Architect default, open existing project from the Choose screen, multi-page layout renders.
 
 ## Run locally
 
