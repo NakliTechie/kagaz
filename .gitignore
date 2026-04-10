@@ -10,3 +10,10 @@ guide/*
 !guide/screenshots/
 guide/screenshots/*
 !guide/screenshots/*.png
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
